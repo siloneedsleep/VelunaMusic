@@ -47,6 +47,36 @@ fn library(app: tauri::AppHandle) -> Result<Vec<Track>, String> {
         .collect())
 }
 #[tauri::command]
+async fn analyze_audio(
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<veluna_core::dj::Analysis, String> {
+    if !library(app)?.iter().any(|track| track.id == id) {
+        return Err("Track is missing from this library".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        veluna_core::dj::analyze(std::fs::File::open(id).map_err(|e| e.to_string())?)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn track_digest(app: tauri::AppHandle, id: String) -> Result<String, String> {
+    if !library(app)?.iter().any(|track| track.id == id) {
+        return Err("Track is missing from this library".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut file = std::fs::File::open(id).map_err(|e| e.to_string())?;
+        let mut digest = Sha256::new();
+        std::io::copy(&mut file, &mut digest).map_err(|e| e.to_string())?;
+        Ok(format!("{:x}", digest.finalize()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn add_music(app: tauri::AppHandle) -> Result<Vec<Track>, String> {
     let picked = rfd::AsyncFileDialog::new()
         .add_filter(
@@ -55,9 +85,36 @@ async fn add_music(app: tauri::AppHandle) -> Result<Vec<Track>, String> {
         )
         .pick_files()
         .await;
+    let paths = picked.into_iter().flatten().map(|f| f.path().to_owned());
+    import_paths(&app, paths).map(|(library, _)| library)
+}
+
+#[tauri::command]
+async fn pick_album(app: tauri::AppHandle) -> Result<(Vec<Track>, Vec<String>), String> {
+    let Some(folder) = rfd::AsyncFileDialog::new().pick_folder().await else {
+        return Ok((library(app)?, vec![]));
+    };
+    let mut files = std::fs::read_dir(folder.path())
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_ok_and(|t| t.is_file()))
+        .map(|entry| entry.path())
+        .collect::<Vec<_>>();
+    files.sort();
+    import_paths(&app, files)
+}
+
+fn import_paths(
+    app: &tauri::AppHandle,
+    paths: impl IntoIterator<Item = PathBuf>,
+) -> Result<(Vec<Track>, Vec<String>), String> {
+    static WRITER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = WRITER.lock().map_err(|_| "Could not lock library")?;
     let mut tracks = library(app.clone())?;
-    for item in picked.into_iter().flatten() {
-        if let Some(t) = open_track(&app, item.path().to_owned()) {
+    let mut ids = Vec::new();
+    for path in paths {
+        if let Some(t) = open_track(app, path) {
+            ids.push(t.id.clone());
             if !tracks.iter().any(|other| other.id == t.id) {
                 tracks.push(t);
             }
@@ -70,7 +127,7 @@ async fn add_music(app: tauri::AppHandle) -> Result<Vec<Track>, String> {
     std::fs::write(&temp, data)
         .and_then(|_| std::fs::rename(temp, index))
         .map_err(|e| e.to_string())?;
-    Ok(tracks)
+    Ok((tracks, ids))
 }
 #[derive(Deserialize)]
 struct Release {
@@ -179,6 +236,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             library,
             add_music,
+            pick_album,
+            track_digest,
+            analyze_audio,
             vault::read_secret,
             vault::write_secret,
             check_update,

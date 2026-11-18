@@ -4,6 +4,7 @@
   const config = window.velunaCloud;
   const tell = message => { get("account-status").textContent = message; };
   let auth = null, revision = 0, ready = false, refreshing = null, generation = 0;
+  const handoff = accountHandoff({request, deviceId:() => device().device_id, tell, active:() => !!auth});
 
   async function request(path, method = "GET", body, authenticated = true, headers = {}) {
     const session = auth;
@@ -56,6 +57,11 @@
     for (const d of rows) {
       const li = document.createElement("li");
       li.textContent = d.label + (d.device_id === local.device_id ? " · Máy này" : " · " + d.platform);
+      if (d.device_id !== local.device_id) {
+        const send = document.createElement("button");
+        send.textContent = "Chuyển bài sang đây";
+        send.onclick = () => perform(() => handoff.send(d.device_id)); li.append(send);
+      }
       list.append(li);
     }
   }
@@ -75,12 +81,14 @@
   }
   get("account").onclick = () => {
     panels(); get("account-dialog").showModal();
+    if (auth) handoff.open();
     if (!config.url || !config.publishableKey) {
       tell("Bản thử nghiệm này chưa được kết nối với project Supabase.");
       get("credentials").hidden = true;
     }
   };
   get("close-account").onclick = () => get("account-dialog").close();
+  get("account-dialog").addEventListener("close", () => handoff.close());
   get("login-form").onsubmit = e => { e.preventDefault(); const signup = e.submitter?.id === "signup";
     perform(async () => {
       const data = await request(signup ? "/auth/v1/signup" : "/auth/v1/token?grant_type=password", "POST",
@@ -89,7 +97,7 @@
       if (!data.access_token) { tell("Kiểm tra email để xác nhận tài khoản rồi đăng nhập."); return; }
       await window.velunaVault.write("account", data.refresh_token);
       remember(data); revision = 0; ready = false; panels(); tell("Đã đăng nhập.");
-      await devices(); await theme(false);
+      await devices(); await theme(false); handoff.open();
     });
   };
   get("refresh-devices").onclick = () => perform(devices);
@@ -102,7 +110,7 @@
   });
   get("logout").onclick = () => perform(async () => {
     try { await request("/auth/v1/logout?scope=local", "POST"); }
-    finally { auth = null; revision = 0; ready = false; generation++; await window.velunaVault.write("account", ""); panels(); tell("Đã đăng xuất khỏi ứng dụng."); }
+    finally { handoff.clear(); auth = null; revision = 0; ready = false; generation++; await window.velunaVault.write("account", ""); panels(); tell("Đã đăng xuất khỏi ứng dụng."); }
   });
   async function restore() {
     const token = await window.velunaVault.read("account");

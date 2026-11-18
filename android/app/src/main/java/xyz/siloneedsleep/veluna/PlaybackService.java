@@ -8,6 +8,7 @@ import androidx.media3.session.MediaSessionService;
 
 public final class PlaybackService extends MediaSessionService {
     private MediaSession session;
+    private AutoMix mixer;
 
     @Override public void onCreate() {
         super.onCreate();
@@ -16,12 +17,14 @@ public final class PlaybackService extends MediaSessionService {
         ExoPlayer player = new ExoPlayer.Builder(this)
             .setAudioAttributes(attributes, true).setHandleAudioBecomingNoisy(true).build();
         session = new MediaSession.Builder(this, player).build();
+        mixer = new AutoMix(this, session, player);
     }
 
     @Override public MediaSession onGetSession(MediaSession.ControllerInfo controller) { return session; }
 
     @Override public void onDestroy() {
         if (session != null) {
+            mixer.close();
             session.getPlayer().release();
             session.release();
         }

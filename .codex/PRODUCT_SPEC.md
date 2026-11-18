@@ -16,11 +16,11 @@ This document contains two complete versions: **Vietnamese** first and **English
 
 Một sản phẩm có bản Android và Windows, dành cho cá nhân và nhóm nhỏ trước. Lõi logic dùng Rust; cho phép Kotlin và API native ở phần tích hợp hệ thống. Tham khảo SimpMusic để phát triển thư viện, playback và AutoMix.
 
-Người dùng đã yêu cầu đưa toàn bộ nhóm tính năng bên dưới vào phạm vi sản phẩm. Tài liệu này ghi nhận yêu cầu và đề xuất mặc định; chưa có mã ứng dụng, bản cài đặt hoặc kết quả benchmark. Các mốc triển khai không đồng nghĩa loại bỏ tính năng ở mốc sau.
+Toàn bộ tính năng trong tài liệu thuộc phạm vi bản phát hành đầu tiên. Mã thử nghiệm Android và Windows nằm trên nhánh `codex/dev`. Chỉ phát hành bộ cài và mở nút tải khi đã hoàn tất đặc tả, gồm account, handoff và AI DJ.
 
 Ba ưu tiên: nghe nhạc ổn định, cá nhân hóa sâu, phát nền ít hao điện. Giao diện khi mở app có animation nổi bật; công việc không cần thiết phải nghỉ khi xuống nền.
 
-Các quyết định người dùng đã chọn: một sản phẩm có hai bản Android/Windows; lõi Rust kết hợp native; nguồn YouTube và nhạc local, bổ sung Spotify; phát hành cho cá nhân/nhóm nhỏ trước; ưu tiên Spotify phát trong app; chuyển máy và remote với một máy phát chính. Các chi tiết mang nhãn “đề xuất”, framework UI, backend account, nhà cung cấp/model LLM và ngưỡng benchmark chưa được xem là quyết định cuối cùng.
+Các quyết định người dùng đã chọn: một sản phẩm có hai bản Android/Windows; lõi Rust kết hợp native; nguồn YouTube và nhạc local, bổ sung Spotify; phát hành cho cá nhân/nhóm nhỏ trước; ưu tiên Spotify phát trong app; chuyển máy và remote với một máy phát chính. Các chi tiết mang nhãn “đề xuất”, framework UI, nhà cung cấp/model LLM và ngưỡng benchmark chưa được xem là quyết định cuối cùng. Supabase Singapore lưu dữ liệu tài khoản.
 
 ## 2. Nguồn nhạc, thư viện và chất lượng
 
@@ -146,6 +146,10 @@ Nghiệm thu phải bao gồm:
 - DJ với nhạc khác tempo, không có beat rõ, intro dài, bản live, bài ngắn, API chậm/lỗi và đổi hàng chờ giữa lúc chuẩn bị. So sánh nghe thử có kiểm soát với AutoMix không LLM.
 - Kiểm tra log/bản sao lưu không chứa token/key; đo hiệu năng và năng lượng trước khi khẳng định mục tiêu tiết kiệm đã đạt.
 
+### Cập nhật và website
+
+Ứng dụng tự kiểm tra release khi mở và khi đang sử dụng. Popup kính mờ trên Android và Windows hiển thị phiên bản mới, nút tải/cài và lựa chọn để sau. Kiểm tra dung lượng và SHA-256 trước khi mở trình cài đặt. Website `veluna.siloneedsleep.xyz` dùng icon app, có liên kết từ portfolio và tải trực tiếp đúng asset khi release chính thức mới nhất có đủ hai bộ cài.
+
 ## 11. Nguồn tham chiếu và ràng buộc đã kiểm tra
 
 - [SimpMusic](https://github.com/maxrave-dev/SimpMusic): Kotlin/Compose, Android và desktop; [GPL-3.0](https://github.com/maxrave-dev/SimpMusic/blob/dev/LICENSE). Nếu phân phối bản dựa trên code, phải đáp ứng nghĩa vụ giấy phép và mã nguồn tương ứng.
@@ -162,7 +166,7 @@ Mọi giới hạn dịch vụ và phiên bản API cần kiểm tra lại khi t
 - [Cài đặt crossfade](https://github.com/maxrave-dev/SimpMusic/blob/f78a4fd6da9680e5771f4763194d2895d26914fd/composeApp/src/commonMain/kotlin/com/maxrave/simpmusic/ui/screen/home/SettingScreen.kt#L1603): thời lượng, DJ mode, tùy chọn album, trạng thái khi Cast.
 - [Android adapter](https://github.com/maxrave-dev/core/blob/8413a257cbe45d102a9f101f2760e35b549e4d9e/media/media3/src/main/java/com/maxrave/media3/exoplayer/CrossfadeExoPlayerAdapter.kt#L79) và [desktop adapter](https://github.com/maxrave-dev/core/blob/8413a257cbe45d102a9f101f2760e35b549e4d9e/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvPlayerAdapter.kt#L64): đã có code chuẩn bị bài và crossfade qua ExoPlayer/mpv. Rust cần port hoặc tích hợp tương ứng, không tự tái sử dụng nguyên code Kotlin.
 - [TrackStructureAnalyzer](https://github.com/maxrave-dev/core/blob/8413a257cbe45d102a9f101f2760e35b549e4d9e/domain/src/commonMain/kotlin/com/maxrave/domain/mediaservice/automix/TrackStructureAnalyzer.kt) và [TransitionPlanner](https://github.com/maxrave-dev/core/blob/8413a257cbe45d102a9f101f2760e35b549e4d9e/domain/src/commonMain/kotlin/com/maxrave/domain/mediaservice/automix/TransitionPlanner.kt): ước lượng tempo/beat/section và điểm chuyển đã tồn tại; không suy diễn rằng engine đã nhận diện giọng hát, tách stem hoặc mix tối ưu mọi thể loại.
-- Chưa chốt UI framework, backend/hosting account, cơ chế auth cụ thể, Windows audio backend, danh sách phiên bản OS tối thiểu, model/provider LLM, chi phí vận hành, ngưỡng năng lượng và bộ thiết bị benchmark. Các lựa chọn này thuộc bước khảo sát, không được tự ghi thành yêu cầu người dùng đã duyệt.
+- Chưa chốt UI framework, cơ chế auth cụ thể, Windows audio backend, danh sách phiên bản OS tối thiểu, model/provider LLM, chi phí vận hành, ngưỡng năng lượng và bộ thiết bị benchmark. Các lựa chọn này thuộc bước khảo sát, không được tự ghi thành yêu cầu người dùng đã duyệt.
 - Không có yêu cầu đồng bộ hai máy phát âm thanh chính xác cùng lúc; ưu tiên đã chọn là handoff và remote. Không có yêu cầu đo khoảng cách vật lý hay con trỏ xuyên màn hình; tính năng gần nhau được cụ thể hóa bằng thiết bị đã ghép đôi và LAN kết nối được.
 
 ## 13. Icon và nhận diện đã chọn
@@ -171,7 +175,7 @@ Mọi giới hạn dịch vụ và phiên bản API cần kiểm tra lại khi t
 - Ảnh master đã nhập vào dự án: `assets/branding/velunamusic-icon-master.png` (đường dẫn tính từ thư mục gốc dự án). Định dạng PNG, 2048 × 2048 pixel, 1.386.704 byte; đây là bản sao nguyên vẹn của file người dùng cung cấp.
 - File nguồn: `app-icon--flat-front-facing-full-bleed-square-artw.png`. SHA-256 của bản master: `927b20a93629426ffd748a90c2c8d93817ebb4e7e2f7fa37554fef719dff65fa`.
 - Dùng master làm nguồn chung để tạo các kích thước/icon nền tảng khi đã chọn framework và cấu trúc build. Bản master hiện được giữ vuông, chưa bo góc sẵn; xử lý mask theo nền tảng trong bước đóng gói.
-- Trạng thái hiện tại: đã nhập ảnh và ghi đặc tả, chưa tạo Android launcher/adaptive icon, Windows ICO hoặc tích hợp vào bản chạy. Kiểm tra ở kích thước icon thực tế trước khi đề xuất thay đổi; không coi lựa chọn của người dùng là đã qua benchmark hiển thị.
+- Icon đã chọn hiện có trong launcher Android, ICO Windows và favicon website. Cần kiểm tra mask thích ứng và độ rõ trên thiết bị thực.
 
 ---
 
@@ -181,11 +185,11 @@ Mọi giới hạn dịch vụ và phiên bản API cần kiểm tra lại khi t
 
 One product with Android and Windows applications, initially for personal use and a small group. Shared application logic uses Rust, with Kotlin and native platform APIs allowed for system integration. Use SimpMusic as a reference for the library, playback, and AutoMix capabilities.
 
-The user requested that every feature group below be included in the product scope. This document records requirements and proposed defaults; application code, installers, and benchmark results do not exist yet. Delivery milestones sequence the work without dropping later features.
+All feature groups are in scope for the first release. Android and Windows development takes place on `codex/dev`. Publish installers and enable public downloads after validating the complete specification, including accounts, handoff and AI DJ.
 
 Three priorities: reliable listening, extensive personalization, and low energy consumption during background playback. The visible application should have expressive animation; unnecessary work must stop when it moves into the background.
 
-Confirmed user choices: one product with Android/Windows versions; a Rust core with native integration; YouTube and local music plus Spotify; personal/small-group release first; prioritize in-app Spotify playback; handoff and remote control with one primary playback device. Details labeled “proposed,” the UI framework, account backend, LLM provider/model, and benchmark thresholds are not final decisions.
+Confirmed user choices: one product with Android/Windows versions; a Rust core with native integration; YouTube and local music plus Spotify; personal/small-group release first; prioritize in-app Spotify playback; handoff and remote control with one primary playback device. Details labeled “proposed,” the UI framework, LLM provider/model, and benchmark thresholds are not final decisions. Supabase in Singapore hosts VelunaMusic accounts.
 
 ## 2. Music sources, library, and quality
 
@@ -311,6 +315,10 @@ Acceptance must cover:
 - DJ behavior across tempo differences, unclear beats, long intros, live recordings, short tracks, delayed/failed APIs, and queue changes during preparation. Conduct controlled listening comparisons against AutoMix without an LLM.
 - Logs/backups must exclude keys/tokens. Measure performance and energy before claiming that efficiency targets have been met.
 
+### Updates and website
+
+Check for a newer stable release at launch and during use. A frosted-glass popup on both platforms offers to install or defer the update. Verify size and SHA-256 before starting the system installer. The website at `veluna.siloneedsleep.xyz` uses the app icon, is linked from the portfolio and downloads the matching asset when the latest stable release contains both installers.
+
 ## 11. References and verified constraints
 
 - [SimpMusic](https://github.com/maxrave-dev/SimpMusic): Kotlin/Compose, Android, and desktop; [GPL-3.0](https://github.com/maxrave-dev/SimpMusic/blob/dev/LICENSE). Distributing code-based derivatives requires complying with the applicable license and corresponding-source obligations.
@@ -327,7 +335,7 @@ Recheck service restrictions and API versions during implementation. This specif
 - [Crossfade settings](https://github.com/maxrave-dev/SimpMusic/blob/f78a4fd6da9680e5771f4763194d2895d26914fd/composeApp/src/commonMain/kotlin/com/maxrave/simpmusic/ui/screen/home/SettingScreen.kt#L1603): durations, DJ mode, album behavior, and Cast availability.
 - [Android adapter](https://github.com/maxrave-dev/core/blob/8413a257cbe45d102a9f101f2760e35b549e4d9e/media/media3/src/main/java/com/maxrave/media3/exoplayer/CrossfadeExoPlayerAdapter.kt#L79) and [desktop adapter](https://github.com/maxrave-dev/core/blob/8413a257cbe45d102a9f101f2760e35b549e4d9e/media/media-jvm/src/main/java/com/simpmusic/media_jvm/mpv/MpvPlayerAdapter.kt#L64): track preparation and crossfade implementations exist for ExoPlayer/mpv. A Rust architecture requires an appropriate port or integration, rather than directly reusing Kotlin source unchanged.
 - [TrackStructureAnalyzer](https://github.com/maxrave-dev/core/blob/8413a257cbe45d102a9f101f2760e35b549e4d9e/domain/src/commonMain/kotlin/com/maxrave/domain/mediaservice/automix/TrackStructureAnalyzer.kt) and [TransitionPlanner](https://github.com/maxrave-dev/core/blob/8413a257cbe45d102a9f101f2760e35b549e4d9e/domain/src/commonMain/kotlin/com/maxrave/domain/mediaservice/automix/TransitionPlanner.kt): tempo/beat/section estimates and transition placement already exist. This does not establish vocal detection, stem separation, or optimal mixing for every genre.
-- Open choices include the UI framework, account backend/hosting, concrete authentication flow, Windows audio backend, minimum OS versions, LLM model/provider, operating costs, energy thresholds, and benchmark-device set. Resolve these through investigation; do not represent them as previously approved user requirements.
+- Open choices include the UI framework, concrete authentication flow, Windows audio backend, minimum OS versions, LLM model/provider, operating costs, energy thresholds, and benchmark-device set. Resolve these through investigation; do not represent them as previously approved user requirements.
 - Precisely synchronized simultaneous playback on two devices is not a current requirement; the chosen priority is handoff and remote control. Physical distance measurement and a pointer spanning displays are not requirements; nearby-device interaction is defined as paired devices with working LAN connectivity.
 ## 13. Selected icon and branding
 
@@ -335,4 +343,4 @@ Recheck service restrictions and API versions during implementation. This specif
 - Imported master asset: `assets/branding/velunamusic-icon-master.png` (relative to the project root). PNG format, 2048 × 2048 pixels, 1,386,704 bytes; this is an unchanged copy of the user-supplied file.
 - Source filename: `app-icon--flat-front-facing-full-bleed-square-artw.png`. Master SHA-256: `927b20a93629426ffd748a90c2c8d93817ebb4e7e2f7fa37554fef719dff65fa`.
 - Use this master as the common source for platform icon sizes after the framework and build structure are selected. The master remains square without pre-applied rounded corners; apply platform masks during packaging.
-- Current status: the asset and specification are imported; Android launcher/adaptive icons, a Windows ICO, and runnable-app integration have not been generated. Inspect actual icon sizes before proposing changes; the user's visual selection is not a completed display benchmark.
+- The artwork is integrated into the Android launcher, Windows ICO and website favicon. Verify adaptive masks and small-size legibility on devices.

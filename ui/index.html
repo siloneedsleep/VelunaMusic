@@ -4,17 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#07172e">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost https://vkzrgfiopdnujookplbv.supabase.co https://api.openai.com https://openrouter.ai; frame-src 'none'; object-src 'none'; base-uri 'none'">
   <title>VelunaMusic</title>
   <link rel="stylesheet" href="player.css">
   <script src="player.js" defer></script>
   <script src="cloud-config.js" defer></script>
   <script src="vault.js" defer></script>
+  <script src="handoff.js" defer></script>
+  <script src="dj.js" defer></script>
   <script src="account.js" defer></script>
 </head>
 <body>
   <header>
     <div class="brand"><img src="icon.png" width="36" height="36" alt="">VelunaMusic</div>
-    <nav><button id="account">Tài khoản</button> <button id="settings">Cài đặt</button></nav>
+    <nav><button id="dj">DJ</button> <button id="account">Tài khoản</button> <button id="settings">Cài đặt</button></nav>
   </header>
   <main>
     <section class="collection">
@@ -35,6 +38,21 @@
     </aside>
   </main>
   <p role="status" id="message"></p>
+  <dialog id="dj-dialog" aria-labelledby="dj-title">
+    <h2 id="dj-title">DJ</h2>
+    <button id="dj-folder">Chọn thư mục album</button>
+    <label><input id="dj-enabled" type="checkbox"> Chuyển bài tự động</label>
+    <label>Phong cách <select id="dj-style"><option value="gentle">Nhẹ nhàng</option><option value="party">Party</option><option value="album">Giữ nguyên album</option></select></label>
+    <label>Lên kế hoạch bằng <select id="dj-provider"><option value="local">AutoMix trên máy</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select></label>
+    <fieldset id="dj-ai" hidden><legend>AI DJ</legend>
+      <label>Model <input id="dj-model" placeholder="ID model của nhà cung cấp" maxlength="126"></label>
+      <label>API key <input id="dj-key" type="password" autocomplete="off" placeholder="Nhập để lưu trên thiết bị"></label>
+      <label>Lượt gọi tối đa mỗi phiên <input id="dj-limit" type="number" min="1" max="100" value="10"></label>
+      <p>DJ gửi đặc trưng nhịp và năng lượng cho nhà cung cấp đã chọn. Chi phí tính vào API key của bạn.</p>
+      <button id="dj-forget">Xóa key đã lưu</button>
+    </fieldset>
+    <p id="dj-status" role="status"></p><button id="dj-save">Áp dụng</button><button id="dj-close">Đóng</button>
+  </dialog>
   <dialog id="account-dialog" aria-labelledby="account-title">
     <h2 id="account-title">Tài khoản VelunaMusic</h2>
     <div id="cloud-actions">
@@ -48,6 +66,11 @@
       <section id="signed-in" hidden>
         <p id="account-email"></p><h3>Thiết bị</h3>
         <ul id="account-devices"></ul><button id="refresh-devices">Làm mới thiết bị</button>
+        <section id="transfer" hidden>
+          <h3>Nhận phiên nghe</h3><p id="transfer-title"></p>
+          <label>File trên máy này <select id="transfer-track"></select></label>
+          <button id="accept-transfer">Nhận trên máy này</button><button id="decline-transfer">Từ chối</button>
+        </section>
         <h3>Đồng bộ màu nhấn</h3>
         <button id="push-theme">Lưu màu từ máy này</button><button id="pull-theme">Nhận màu từ tài khoản</button>
         <button id="logout">Đăng xuất</button>

@@ -6,6 +6,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.*;
 import android.provider.OpenableColumns;
+import android.provider.DocumentsContract;
 import android.provider.Settings;
 import android.webkit.*;
 import androidx.webkit.WebViewAssetLoader;
@@ -23,6 +24,7 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     static { System.loadLibrary("veluna_core"); }
     static native boolean newerRelease(String installed, String tag);
+    static native String analyzeAudio(int fd);
     private final ArrayList<MediaItem> library = new ArrayList<>();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService network = Executors.newSingleThreadExecutor();
@@ -57,7 +59,8 @@ public final class MainActivity extends Activity {
                 Uri uri = request.getUrl();
                 if ("https".equals(uri.getScheme()) && WebViewAssetLoader.DEFAULT_DOMAIN.equals(uri.getHost()))
                     return local.shouldInterceptRequest(uri);
-                if ("https".equals(uri.getScheme()) && "vkzrgfiopdnujookplbv.supabase.co".equals(uri.getHost())) return null;
+                if (!request.isForMainFrame() && "https".equals(uri.getScheme()) && java.util.Arrays.asList(
+                    "vkzrgfiopdnujookplbv.supabase.co","api.openai.com","openrouter.ai").contains(uri.getHost())) return null;
                 return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
             }
             @Override public void onPageFinished(WebView view, String url) { publish(); }
@@ -120,6 +123,7 @@ public final class MainActivity extends Activity {
             p.put("time", controller == null ? 0 : Math.max(0, controller.getCurrentPosition()) / 1000.0);
             p.put("duration", controller == null ? 0 : Math.max(0, controller.getDuration()) / 1000.0);
             p.put("playing", controller != null && controller.isPlaying());
+            p.put("ready", controller != null && controller.getPlaybackState() == Player.STATE_READY);
         } catch (JSONException ignored) { }
         return p;
     }
@@ -172,6 +176,8 @@ public final class MainActivity extends Activity {
         if (request == 12 && picture != null) {
             picture.onReceiveValue(result == RESULT_OK && data != null && data.getData() != null ? new Uri[]{data.getData()} : null);
             picture = null;
+        } else if (request == 13 && result == RESULT_OK && data != null && data.getData() != null) {
+            importAlbum(data.getData());
         } else if (request == 11 && result == RESULT_OK && data != null) {
             if (data.getClipData() != null) for (int i = 0; i < data.getClipData().getItemCount(); i++) importUri(data.getClipData().getItemAt(i).getUri());
             else importUri(data.getData());
@@ -181,7 +187,77 @@ public final class MainActivity extends Activity {
         }
     }
 
+    private void importAlbum(Uri tree) {
+        try { getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION); }
+        catch (SecurityException e) { message("Không có quyền đọc thư mục."); return; }
+        network.execute(() -> {
+            ArrayList<MediaItem> album = new ArrayList<>();
+            Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree));
+            String[] columns = {DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE};
+            try (Cursor c = getContentResolver().query(children,columns,null,null,null)) {
+                while (c != null && c.moveToNext()) {
+                    String mime=c.getString(2);
+                    if (mime!=null && mime.startsWith("audio/")) album.add(track(DocumentsContract.buildDocumentUriUsingTree(tree,c.getString(0)),c.getString(1)));
+                }
+                album.sort((a,b)->String.valueOf(a.mediaMetadata.title).compareToIgnoreCase(String.valueOf(b.mediaMetadata.title)));
+                runOnUiThread(() -> {
+                    if (isDestroyed() || controller==null) return;
+                    if (album.isEmpty()) {message("Thư mục này chưa có file âm thanh.");return;}
+                    JSONArray ids=new JSONArray();
+                    for(MediaItem item:album){if(index(item.mediaId)<0) library.add(item); ids.put(item.mediaId);}
+                    try {getPreferences(0).edit().putString("tracks",tracks().toString()).apply();} catch(JSONException ignored){}
+                    controller.pause(); controller.setMediaItems(album); controller.prepare(); publish(); call("onVelunaAlbum",ids);
+                });
+            } catch (RuntimeException e) { runOnUiThread(()->message("Không đọc được thư mục này.")); }
+        });
+    }
     public final class Bridge {
+        @JavascriptInterface public void pickAlbum() { runOnUiThread(()->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),13)); }
+        @JavascriptInterface public void setMix(boolean enabled, String from, String to, int ms) {
+            getSharedPreferences("dj", 0).edit().putBoolean("enabled",enabled)
+                .putString("from",from).putString("to",to).putLong("width",Math.max(0,Math.min(12000,ms))).apply();
+        }
+        @JavascriptInterface public void analyzeTrack(String ticket, String id) { runOnUiThread(() -> {
+            if (index(id) < 0) { call("onVelunaTransferReply", ticket, "", "Thiếu file nhạc."); return; }
+            network.execute(() -> {
+                try (ParcelFileDescriptor descriptor = getContentResolver().openFileDescriptor(Uri.parse(id), "r")) {
+                    if (descriptor == null) throw new IOException();
+                    String result = analyzeAudio(descriptor.detachFd());
+                    if (result == null) throw new IOException();
+                    JSONObject analysis = new JSONObject(result);
+                    runOnUiThread(() -> call("onVelunaTransferReply", ticket, analysis, ""));
+                } catch (Exception e) { runOnUiThread(() -> call("onVelunaTransferReply", ticket, "", "Không phân tích được file.")); }
+            });
+        }); }
+        @JavascriptInterface public void inspectTrack(String ticket, String id) { runOnUiThread(() -> {
+            if (index(id) < 0) { call("onVelunaTransferReply", ticket, "", "Thiếu file nhạc."); return; }
+            network.execute(() -> {
+                try {
+                    Uri uri = Uri.parse(id);
+                    android.media.MediaMetadataRetriever probe = new android.media.MediaMetadataRetriever();
+                    try {
+                        probe.setDataSource(MainActivity.this, uri);
+                        String duration = probe.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION);
+                        if (duration == null || Long.parseLong(duration) <= 0) throw new IOException();
+                    } finally { probe.release(); }
+                    java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
+                    try (InputStream in = getContentResolver().openInputStream(uri)) {
+                        if (in == null) throw new IOException();
+                        byte[] block = new byte[65536]; int n;
+                        while ((n = in.read(block)) >= 0) sha.update(block, 0, n);
+                    }
+                    StringBuilder out = new StringBuilder();
+                    for (byte b : sha.digest()) out.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
+                    runOnUiThread(() -> call("onVelunaTransferReply", ticket, out.toString(), ""));
+                } catch (Exception e) { runOnUiThread(() -> call("onVelunaTransferReply", ticket, "", "Không đọc được file nhạc.")); }
+            });
+        }); }
+        @JavascriptInterface public void pauseForTransfer(String ticket, String id) { runOnUiThread(() -> {
+            MediaItem item = controller == null ? null : controller.getCurrentMediaItem();
+            if (item == null || !item.mediaId.equals(id)) { call("onVelunaTransferReply", ticket, "", "Bài đang phát đã đổi."); return; }
+            JSONObject playback = progress();
+            controller.pause(); call("onVelunaTransferReply", ticket, playback, "");
+        }); }
         @JavascriptInterface public String readSecret(String slot) {
             try { return secrets.read(slot); } catch (Exception e) { return ""; }
         }
@@ -194,7 +270,11 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void select(String id, boolean play, long ms) { runOnUiThread(() -> {
             int i = index(id);
             if (controller == null || i < 0) return;
-            controller.seekTo(i, Math.max(ms, 0)); controller.prepare(); controller.setPlayWhenReady(play);
+            int queued=-1;
+            for(int n=0; n<controller.getMediaItemCount(); n++) if(id.equals(controller.getMediaItemAt(n).mediaId)){queued=n;break;}
+            if(queued>=0) controller.seekTo(queued, Math.max(ms,0));
+            else controller.setMediaItems(library,i,Math.max(ms,0));
+            controller.prepare(); controller.setPlayWhenReady(play);
         }); }
         @JavascriptInterface public void toggle() { runOnUiThread(() -> {
             if (controller == null) return;

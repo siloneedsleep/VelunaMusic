@@ -2,7 +2,11 @@
 const el = id => document.getElementById(id);
 const native = window.VelunaAndroid;
 const desktop = window.__TAURI__?.core;
-const audio = el("audio");
+let audio = el("audio");
+let albumQueue = [];
+function playOrder() {
+  return albumQueue.length ? albumQueue : tracks.map(t=>t.id);
+}
 let tracks = [], selected = "", pendingUpdate = "", newSeek = null;
 const msg = text => { el("message").textContent = text; };
 const fmt = s => Number.isFinite(s) ? Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0") : "0:00";
@@ -31,17 +35,21 @@ function position(time, duration, playing) {
 function savePosition() { if (!native && selected) localStorage.setItem("session", JSON.stringify({id:selected,time:audio.currentTime || 0})); }
 function loadTrack(id, play, time=0) {
   if (!tracks.some(t=>t.id===id)) return;
-  selected=id; draw();
+  window.velunaDJ?.stopFade();
+  if (albumQueue.length && !albumQueue.includes(id)) albumQueue=[];
+  selected=id; draw(); window.velunaDJ?.prepare();
   if (native) {native.select(id,play,Math.floor(time*1000)); return;}
   if (!desktop) return;
   newSeek=time; audio.src=desktop.convertFileSrc(id); audio.load();
   if (play) audio.play().catch(e=>msg(e.message));
 }
 function skip(step) {
-  const i=tracks.findIndex(t=>t.id===selected), next=tracks[i+step]; if(next) loadTrack(next.id,true);
+  const order=playOrder(), next=order[order.indexOf(selected)+step]; if(next) loadTrack(next,true);
 }
 window.onVelunaState = state => {
   tracks=state.tracks || []; selected=state.id || ""; draw(); position(state.time,state.duration,state.playing);
+  window.velunaDJ?.prepare();
+  window.dispatchEvent(new CustomEvent("veluna-player",{detail:state}));
 };
 window.onVelunaProgress = state => position(state.time, state.duration, state.playing);
 window.onVelunaUpdate = (version,error) => {
@@ -68,11 +76,16 @@ el("add").onclick=async()=>{if(native){native.pick();return;}el("add").disabled=
 el("query").oninput=draw;
 el("prev").onclick=()=>skip(-1);el("next").onclick=()=>skip(1);
 el("play").onclick=()=>{if(!selected) {if(tracks[0]) loadTrack(tracks[0].id,true);return;}if(native) native.toggle();else if(audio.paused) audio.play().catch(e=>msg(e.message));else audio.pause();};
-el("seek").onchange=e=>{const t=+e.target.value;if(native)native.seek(Math.round(t*1000));else if(audio.src)audio.currentTime=t;};
-audio.onloadedmetadata=()=>{if(newSeek!==null && Number.isFinite(audio.duration))audio.currentTime=Math.min(newSeek,audio.duration);newSeek=null;};
-audio.ontimeupdate=()=>{if(!document.hidden)position(audio.currentTime,audio.duration,!audio.paused);};
-audio.onplay=audio.onpause=()=>{savePosition();position(audio.currentTime,audio.duration,!audio.paused);};
-audio.onended=()=>skip(1);audio.onerror=()=>msg("Không đọc được file này. Kiểm tra định dạng và vị trí file.");
+el("seek").onchange=e=>{window.velunaDJ?.stopFade();const t=+e.target.value;if(native)native.seek(Math.round(t*1000));else if(audio.src)audio.currentTime=t;};
+function bindAudio(player) {
+  player.onloadedmetadata=()=>{if(newSeek!==null && Number.isFinite(player.duration))player.currentTime=Math.min(newSeek,player.duration);newSeek=null;};
+  player.ontimeupdate=()=>{if(!document.hidden)position(player.currentTime,player.duration,!player.paused);window.velunaDJ?.tick();};
+  player.onplay=()=>{savePosition();position(player.currentTime,player.duration,true);window.velunaDJ?.prepare();};
+  player.onpause=()=>{if(!player.ended)window.velunaDJ?.stopFade();savePosition();position(player.currentTime,player.duration,false);};
+  player.onended=()=>{if(!window.velunaDJ?.finish())skip(1);};
+  player.onerror=()=>msg("Không đọc được file này. Kiểm tra định dạng và vị trí file.");
+}
+bindAudio(audio);
 document.addEventListener("visibilitychange",()=>{if(document.hidden)savePosition();else if(native)native.refresh();else position(audio.currentTime,audio.duration,!audio.paused);});
 window.addEventListener("pagehide",savePosition);
 el("settings").onclick=()=>el("prefs").showModal();el("done").onclick=()=>el("prefs").close();
