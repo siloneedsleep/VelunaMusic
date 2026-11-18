@@ -1,1 +1,69 @@
-<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#07172e"><title>VelunaMusic</title><link rel="stylesheet" href="player.css"><script src="player.js" defer></script></head><body><header><div class="brand"><img src="icon.png" width="36" height="36" alt="">VelunaMusic</div><button id="settings" aria-label="Cài đặt">Cài đặt</button></header><main><section class="collection"><div class="heading"><h1>Thư viện</h1><button id="add">＋ Thêm nhạc</button></div><label class="search">Tìm bài hát<input id="query" type="search" placeholder="Tên bài trong thư viện"></label><div id="list"></div></section><aside><img id="cover" src="icon.png" alt="" width="220" height="220"><p>Đang nghe</p><h2 id="title">Chọn một bài hát</h2><input id="seek" aria-label="Vị trí phát" type="range" min="0" max="0" value="0"><div class="time"><span id="elapsed">0:00</span><span id="duration">0:00</span></div><div class="transport"><button id="prev" aria-label="Bài trước">⏮</button><button id="play" aria-label="Phát hoặc tạm dừng">▶</button><button id="next" aria-label="Bài kế">⏭</button></div></aside></main><p role="status" id="message"></p><dialog id="prefs"><h2>Cài đặt</h2><label>Màu nhấn <input id="color" type="color" value="#83d8ff"></label><label>Ảnh nền <input id="background" type="file" accept="image/*"></label><button id="reset">Xóa ảnh nền</button><button id="check">Kiểm tra cập nhật</button><button id="done">Xong</button></dialog><dialog id="upgrade"><h2>Có bản cập nhật mới</h2><p id="version"></p><button id="install">Tải và cài đặt</button><button id="later">Để sau</button></dialog><audio id="audio" preload="metadata"></audio></body></html>
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#07172e">
+  <title>VelunaMusic</title>
+  <link rel="stylesheet" href="player.css">
+  <script src="player.js" defer></script>
+  <script src="cloud-config.js" defer></script>
+  <script src="account.js" defer></script>
+</head>
+<body>
+  <header>
+    <div class="brand"><img src="icon.png" width="36" height="36" alt="">VelunaMusic</div>
+    <nav><button id="account">Tài khoản</button> <button id="settings">Cài đặt</button></nav>
+  </header>
+  <main>
+    <section class="collection">
+      <div class="heading"><h1>Thư viện</h1><button id="add">＋ Thêm nhạc</button></div>
+      <label class="search">Tìm bài hát<input id="query" type="search" placeholder="Tên bài trong thư viện"></label>
+      <div id="list"></div>
+    </section>
+    <aside>
+      <img id="cover" src="icon.png" alt="" width="220" height="220">
+      <p>Đang nghe</p><h2 id="title">Chọn một bài hát</h2>
+      <input id="seek" aria-label="Vị trí phát" type="range" min="0" max="0" value="0">
+      <div class="time"><span id="elapsed">0:00</span><span id="duration">0:00</span></div>
+      <div class="transport">
+        <button id="prev" aria-label="Bài trước">⏮</button>
+        <button id="play" aria-label="Phát hoặc tạm dừng">▶</button>
+        <button id="next" aria-label="Bài kế">⏭</button>
+      </div>
+    </aside>
+  </main>
+  <p role="status" id="message"></p>
+  <dialog id="account-dialog" aria-labelledby="account-title">
+    <h2 id="account-title">Tài khoản VelunaMusic</h2>
+    <div id="cloud-actions">
+      <section id="credentials">
+        <form id="login-form">
+          <label>Email <input id="email" type="email" autocomplete="email" required></label>
+          <label>Mật khẩu <input id="password" type="password" autocomplete="current-password" required></label>
+          <button type="submit">Đăng nhập</button><button type="submit" id="signup">Tạo tài khoản</button>
+        </form>
+      </section>
+      <section id="signed-in" hidden>
+        <p id="account-email"></p><h3>Thiết bị</h3>
+        <ul id="account-devices"></ul><button id="refresh-devices">Làm mới thiết bị</button>
+        <h3>Đồng bộ màu nhấn</h3>
+        <button id="push-theme">Lưu màu từ máy này</button><button id="pull-theme">Nhận màu từ tài khoản</button>
+        <button id="logout">Đăng xuất</button>
+      </section>
+    </div>
+    <p role="status" id="account-status"></p><button id="close-account">Đóng</button>
+  </dialog>
+  <dialog id="prefs" aria-labelledby="prefs-title">
+    <h2 id="prefs-title">Cài đặt</h2>
+    <label>Màu nhấn <input id="color" type="color" value="#83d8ff"></label>
+    <label>Ảnh nền <input id="background" type="file" accept="image/*"></label>
+    <button id="reset">Xóa ảnh nền</button><button id="check">Kiểm tra cập nhật</button><button id="done">Xong</button>
+  </dialog>
+  <dialog id="upgrade" aria-labelledby="upgrade-title">
+    <h2 id="upgrade-title">Có bản cập nhật mới</h2><p id="version"></p>
+    <button id="install">Tải và cài đặt</button><button id="later">Để sau</button>
+  </dialog>
+  <audio id="audio" preload="metadata"></audio>
+</body>
+</html>

@@ -8,6 +8,7 @@ import android.os.*;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.webkit.*;
+import androidx.webkit.WebViewAssetLoader;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.media3.common.*;
@@ -46,11 +47,15 @@ public final class MainActivity extends Activity {
         web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false);
         web.getSettings().setAllowContentAccess(false);
+        WebViewAssetLoader local = new WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this)).build();
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return true; }
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
-                if ("file".equals(uri.getScheme()) && uri.getPath() != null && uri.getPath().startsWith("/android_asset/")) return null;
+                if ("https".equals(uri.getScheme()) && WebViewAssetLoader.DEFAULT_DOMAIN.equals(uri.getHost()))
+                    return local.shouldInterceptRequest(uri);
+                if ("https".equals(uri.getScheme()) && "vkzrgfiopdnujookplbv.supabase.co".equals(uri.getHost())) return null;
                 return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
             }
             @Override public void onPageFinished(WebView view, String url) { publish(); }
@@ -64,7 +69,7 @@ public final class MainActivity extends Activity {
             }
         });
         web.addJavascriptInterface(new Bridge(), "VelunaAndroid");
-        web.loadUrl("file:///android_asset/index.html");
+        web.loadUrl("https://appassets.androidplatform.net/assets/index.html");
         setContentView(web);
         SessionToken token = new SessionToken(this, new ComponentName(this, PlaybackService.class));
         connection = new MediaController.Builder(this, token).buildAsync();
