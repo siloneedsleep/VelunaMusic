@@ -1,1 +1,44 @@
-{"headers":[{"source":"/(.*)","headers":[{"key":"X-Content-Type-Options","value":"nosniff"},{"key":"Referrer-Policy","value":"strict-origin-when-cross-origin"},{"key":"Content-Security-Policy","value":"default-src 'self'; connect-src 'self' https://api.github.com; style-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'"}]}]}
+{
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; connect-src 'self' https://api.github.com; style-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'"
+        }
+      ]
+    },
+    {
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex"
+        }
+      ],
+      "source": "/callback(.*)"
+    }
+  ],
+  "rewrites": [
+    {
+      "destination": "/callback.html",
+      "source": "/callback"
+    }
+  ]
+}
