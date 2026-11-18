@@ -1,7 +1,10 @@
 use windows_sys::Win32::Security::Credentials::*;
 
 fn target(slot: &str) -> Result<Vec<u16>, String> {
-    if !matches!(slot, "account" | "dj-openai" | "dj-openrouter") {
+    if !matches!(
+        slot,
+        "account" | "dj-openai" | "dj-openrouter" | "spotify-pending"
+    ) {
         return Err("Unknown credential".into());
     }
     Ok(format!("VelunaMusic/{slot}\0").encode_utf16().collect())

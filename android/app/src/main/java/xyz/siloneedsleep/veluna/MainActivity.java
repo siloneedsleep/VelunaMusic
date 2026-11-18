@@ -34,6 +34,7 @@ public final class MainActivity extends Activity {
     private SecretStore secrets;
     private ValueCallback<Uri[]> picture;
     private boolean visible;
+    private volatile String spotifyReturn = "";
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (!visible || controller == null || !controller.isPlaying()) return;
@@ -44,6 +45,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        acceptSpotifyIntent(getIntent());
         readLibrary();
         secrets = new SecretStore(this);
         web = new WebView(this);
@@ -60,7 +62,7 @@ public final class MainActivity extends Activity {
                 if ("https".equals(uri.getScheme()) && WebViewAssetLoader.DEFAULT_DOMAIN.equals(uri.getHost()))
                     return local.shouldInterceptRequest(uri);
                 if (!request.isForMainFrame() && "https".equals(uri.getScheme()) && java.util.Arrays.asList(
-                    "vkzrgfiopdnujookplbv.supabase.co","api.openai.com","openrouter.ai").contains(uri.getHost())) return null;
+                    "vkzrgfiopdnujookplbv.supabase.co","api.openai.com","openrouter.ai","accounts.spotify.com","api.spotify.com").contains(uri.getHost())) return null;
                 return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
             }
             @Override public void onPageFinished(WebView view, String url) { publish(); }
@@ -211,7 +213,23 @@ public final class MainActivity extends Activity {
             } catch (RuntimeException e) { runOnUiThread(()->message("Không đọc được thư mục này.")); }
         });
     }
+    private void acceptSpotifyIntent(Intent intent) {
+        Uri uri=intent==null?null:intent.getData();
+        if(uri!=null && "velunamusic".equals(uri.getScheme()) && "spotify".equals(uri.getHost()) && "/callback".equals(uri.getPath()) && uri.toString().length()<=4096) spotifyReturn=uri.toString();
+    }
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);setIntent(intent);acceptSpotifyIntent(intent);
+        if(web!=null)web.evaluateJavascript("window.dispatchEvent(new Event('spotify-return'))",null);
+    }
     public final class Bridge {
+        @JavascriptInterface public String spotifyCallback() {return spotifyReturn;}
+        @JavascriptInterface public void openSpotify(String address) {
+            Uri uri=Uri.parse(address);
+            if(!"https".equals(uri.getScheme()) || uri.getUserInfo()!=null || uri.getPort()!=-1) return;
+            boolean allowed=("accounts.spotify.com".equals(uri.getHost()) && "/authorize".equals(uri.getPath())) ||
+                "open.spotify.com".equals(uri.getHost()) || ("www.spotify.com".equals(uri.getHost()) && "/account/apps/".equals(uri.getPath()));
+            if(allowed)runOnUiThread(()->{try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(ActivityNotFoundException e){message("Thiết bị thiếu trình duyệt để mở Spotify.");}});
+        }
         @JavascriptInterface public void pickAlbum() { runOnUiThread(()->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),13)); }
         @JavascriptInterface public void setMix(boolean enabled, String from, String to, int ms) {
             getSharedPreferences("dj", 0).edit().putBoolean("enabled",enabled)

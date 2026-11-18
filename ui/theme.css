@@ -1,0 +1,31 @@
+body{font-size:calc(1rem * var(--type-scale,1));--type-scale:1}
+header,.collection,aside,dialog,button,.row,input:not([type=checkbox]):not([type=color]),select,fieldset {
+  color:#ecf6ff;
+  background-color:color-mix(in srgb,var(--glass-tint,#183850) calc(var(--glass-opacity,75)*1%),transparent);
+  border:1px solid rgb(184 225 255 / calc(var(--glass-border,22)/100));
+  border-radius:calc(var(--glass-radius,16)*1px);
+  backdrop-filter:blur(calc(var(--glass-blur,12)*1px));
+}
+header{width:min(1100px,94vw);margin:10px auto 0;padding:0 clamp(10px,2vw,24px)}
+.collection,aside,dialog{background-image:linear-gradient(140deg,#d6f3ff0c,transparent 54%)}
+dialog{max-height:min(82vh,800px);overflow:auto;width:min(420px,92vw)}
+dialog h3{font-size:1.05em;margin:1em 0 .35em}
+dialog label{display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:.45em}
+dialog input:not([type=checkbox]):not([type=color]),select{min-width:0;max-width:100%;padding:5px 9px}
+dialog button{display:inline-block;margin:4px 2px;line-height:1.25}
+fieldset[hidden],section[hidden]{display:none}
+fieldset{padding:10px}
+select option{background:#132e45;color:#f3faff}
+.row{margin:3px 0;padding:10px;backdrop-filter:none}
+.row[aria-current=true]{box-shadow:inset 3px 0 var(--accent);background-color:color-mix(in srgb,var(--accent) 12%,transparent)}
+#play{background:var(--accent);border-radius:50%}
+#seek{accent-color:var(--accent);height:16px}
+a,button,input,select{touch-action:manipulation}
+@media(prefers-reduced-motion:no-preference){
+  body[data-motion=on] #cover{transition:transform .5s ease,box-shadow .5s ease}
+  body[data-motion=on][data-playing=true] #cover{transform:rotate(-4deg) scale(1.025);box-shadow:0 12px 40px color-mix(in srgb,var(--accent) 20%,transparent)}
+  body[data-motion=on] .row[aria-current=true]{animation:track-enter .32s ease-out}
+  @keyframes track-enter{from{transform:translateX(-5px);opacity:.65}}
+}
+body[data-motion=off] *,body[data-motion=off] *::before,body[data-motion=off] *::after{animation:none!important;transition:none!important}
+@media(max-width:470px){header{width:96vw}.brand{font-size:1rem;gap:6px}.brand img{width:29px;height:29px}header nav button{padding:7px 8px;font-size:.85em}}

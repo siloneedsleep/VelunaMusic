@@ -27,6 +27,7 @@ function draw() {
   el("title").textContent=tracks.find(t => t.id === selected)?.title || "Chọn một bài hát";
 }
 function position(time, duration, playing) {
+  document.body.dataset.playing=String(!!playing);
   el("seek").max=Number.isFinite(duration) ? duration : 0;
   if (document.activeElement !== el("seek")) el("seek").value = time || 0;
   el("elapsed").textContent=fmt(time); el("duration").textContent=fmt(duration);

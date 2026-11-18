@@ -5,6 +5,7 @@
   const tell = message => { get("account-status").textContent = message; };
   let auth = null, revision = 0, ready = false, refreshing = null, generation = 0;
   const handoff = accountHandoff({request, deviceId:() => device().device_id, tell, active:() => !!auth});
+  const spotify = spotifySettings({request,user:()=>auth?.id,perform});
 
   async function request(path, method = "GET", body, authenticated = true, headers = {}) {
     const session = auth;
@@ -25,7 +26,7 @@
     const text = await response.text();
     const data = text ? JSON.parse(text) : null;
     if (!response.ok) {
-      if (data?.code === "40001") throw Error("Màu trên máy khác đã thay đổi. Hãy nhận màu từ tài khoản trước khi lưu tiếp.");
+      if (data?.code === "40001") throw Error("Giao diện trên máy khác đã đổi. Nhận phiên bản mới trước khi lưu tiếp.");
       throw Error(data?.msg || data?.message || data?.error_description || "Supabase chưa xử lý được yêu cầu.");
     }
     return data;
@@ -70,8 +71,10 @@
     const item = rows[0];
     revision = item?.revision || 0; ready = true;
     if (apply && item && !item.deleted && /^#[a-f\d]{6}$/i.test(item.payload.accent)) {
-      const color = get("color"); color.value = item.payload.accent; color.dispatchEvent(new Event("input")); tell("Đã nhận màu nhấn từ tài khoản.");
-    } else if (apply) tell("Tài khoản chưa lưu màu nhấn.");
+      const color = get("color"); color.value = item.payload.accent; color.dispatchEvent(new Event("input"));
+      if(item.payload.glass)window.velunaTheme.apply(item.payload.glass);
+      tell("Đã nhận giao diện từ tài khoản.");
+    } else if (apply) tell("Tài khoản chưa lưu giao diện.");
   }
   async function perform(action) {
     const current = generation;
@@ -81,7 +84,7 @@
   }
   get("account").onclick = () => {
     panels(); get("account-dialog").showModal();
-    if (auth) handoff.open();
+    if (auth) {handoff.open();perform(spotify.show);}
     if (!config.url || !config.publishableKey) {
       tell("Bản thử nghiệm này chưa được kết nối với project Supabase.");
       get("credentials").hidden = true;
@@ -97,7 +100,7 @@
       if (!data.access_token) { tell("Kiểm tra email để xác nhận tài khoản rồi đăng nhập."); return; }
       await window.velunaVault.write("account", data.refresh_token);
       remember(data); revision = 0; ready = false; panels(); tell("Đã đăng nhập.");
-      await devices(); await theme(false); handoff.open();
+      await devices(); await theme(false); handoff.open(); await spotify.show();
     });
   };
   get("refresh-devices").onclick = () => perform(devices);
@@ -105,12 +108,12 @@
   get("push-theme").onclick = () => perform(async () => {
     if (!ready) { await theme(true); return; }
     revision = await request("/rest/v1/rpc/veluna_save_item", "POST", {
-      p_kind:"theme",p_item_id:themeId,p_expected_revision:revision,p_payload:{accent:get("color").value},p_deleted:false
-    }); tell("Đã lưu màu nhấn lên tài khoản.");
+      p_kind:"theme",p_item_id:themeId,p_expected_revision:revision,p_payload:{accent:get("color").value,glass:window.velunaTheme.export()},p_deleted:false
+    }); tell("Đã lưu giao diện lên tài khoản.");
   });
   get("logout").onclick = () => perform(async () => {
     try { await request("/auth/v1/logout?scope=local", "POST"); }
-    finally { handoff.clear(); auth = null; revision = 0; ready = false; generation++; await window.velunaVault.write("account", ""); panels(); tell("Đã đăng xuất khỏi ứng dụng."); }
+    finally { handoff.clear(); auth = null; revision = 0; ready = false; generation++; await window.velunaVault.write("account", ""); panels(); await spotify.clear(); tell("Đã đăng xuất khỏi ứng dụng."); }
   });
   async function restore() {
     const token = await window.velunaVault.read("account");
@@ -118,7 +121,7 @@
     const data = await request("/auth/v1/token?grant_type=refresh_token", "POST", {refresh_token:token}, false);
     if (auth) return;
     await window.velunaVault.write("account", data.refresh_token);
-    remember(data); panels(); await devices(); await theme(false);
+    remember(data); panels(); await devices(); await theme(false); await spotify.show();
   }
   if (config.url && (window.VelunaAndroid || window.__TAURI__)) perform(restore);
 })();

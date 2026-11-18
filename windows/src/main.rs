@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use tauri::Manager;
+use tauri_plugin_deep_link::DeepLinkExt;
 
 const REPO: &str = "https://github.com/siloneedsleep/VelunaMusic";
 const INSTALLER: &str = "VelunaMusic-Windows-x64.exe";
@@ -231,13 +232,67 @@ async fn install_update(app: tauri::AppHandle, version: String) -> Result<(), St
     app.exit(0);
     Ok(())
 }
+#[tauri::command]
+fn open_spotify(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
+    if parsed.scheme() != "https"
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port().is_some()
+    {
+        return Err("Invalid Spotify URL".into());
+    }
+    match (parsed.host_str(), parsed.path()) {
+        (Some("accounts.spotify.com"), "/authorize") => {
+            #[cfg(debug_assertions)]
+            app.deep_link().register_all().map_err(|e| e.to_string())?;
+            let _ = app;
+        }
+        (Some("open.spotify.com"), _) | (Some("www.spotify.com"), "/account/apps/") => (),
+        _ => return Err("Unsupported Spotify URL".into()),
+    }
+    open::that_detached(parsed.as_str()).map_err(|e| e.to_string())
+}
+#[tauri::command]
+fn spotify_callback(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    Ok(app
+        .deep_link()
+        .get_current()
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default()
+        .into_iter()
+        .find(|url| {
+            url.scheme() == "velunamusic"
+                && url.host_str() == Some("spotify")
+                && url.path() == "/callback"
+        })
+        .map(String::from))
+}
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
+        .setup(|app| {
+            let handle = app.handle().clone();
+            app.deep_link().on_open_url(move |_| {
+                if let Some(win) = handle.get_webview_window("main") {
+                    let _ = win.eval("window.dispatchEvent(new Event('spotify-return'))");
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             library,
             add_music,
             pick_album,
             track_digest,
+            open_spotify,
+            spotify_callback,
             analyze_audio,
             vault::read_secret,
             vault::write_secret,

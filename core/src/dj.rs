@@ -186,4 +186,47 @@ mod tests {
             .collect();
         assert_eq!(describe(&envelope).bpm, Some(120));
     }
+    #[test]
+    fn decodes_both_ends_of_a_real_wave_stream() {
+        use std::io::Write;
+        let rate = 8000_u32;
+        let frames = rate * 32;
+        let path = std::env::temp_dir().join(format!(
+            "veluna-dj-{}-{}.wav",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let mut out = std::io::BufWriter::new(File::create(&path).unwrap());
+        let size = frames * 2;
+        out.write_all(b"RIFF").unwrap();
+        out.write_all(&(size + 36).to_le_bytes()).unwrap();
+        out.write_all(b"WAVEfmt ").unwrap();
+        out.write_all(&16u32.to_le_bytes()).unwrap();
+        for n in [1_u16, 1] {
+            out.write_all(&n.to_le_bytes()).unwrap();
+        }
+        for n in [rate, rate * 2] {
+            out.write_all(&n.to_le_bytes()).unwrap();
+        }
+        for n in [2_u16, 16] {
+            out.write_all(&n.to_le_bytes()).unwrap();
+        }
+        out.write_all(b"data").unwrap();
+        out.write_all(&size.to_le_bytes()).unwrap();
+        for frame in 0..frames {
+            let period = if frame < rate * 16 { 4000 } else { 4800 };
+            let pulse = if frame % period < 160 { 9000_i16 } else { 0 };
+            out.write_all(&pulse.to_le_bytes()).unwrap();
+        }
+        drop(out);
+        let features = analyze(File::open(&path).unwrap());
+        std::fs::remove_file(&path).unwrap();
+        let features = features.unwrap();
+        assert_eq!(features.intro.bpm, Some(120));
+        assert_eq!(features.outro.unwrap().bpm, Some(100));
+        assert!((features.duration.unwrap() - 32.0).abs() < 0.01);
+    }
 }
