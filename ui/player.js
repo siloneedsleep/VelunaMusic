@@ -1,0 +1,90 @@
+"use strict";
+const el = id => document.getElementById(id);
+const native = window.VelunaAndroid;
+const desktop = window.__TAURI__?.core;
+const audio = el("audio");
+let tracks = [], selected = "", pendingUpdate = "", newSeek = null;
+const msg = text => { el("message").textContent = text; };
+const fmt = s => Number.isFinite(s) ? Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0") : "0:00";
+const saved = () => { try {return JSON.parse(localStorage.getItem("session")) || {};} catch {return {};} };
+function draw() {
+  const fragment = document.createDocumentFragment();
+  const query = el("query").value.toLocaleLowerCase();
+  for (const track of tracks.filter(t => t.title.toLocaleLowerCase().includes(query))) {
+    const row = document.createElement("button");
+    row.className="row"; row.setAttribute("aria-current", String(track.id === selected));
+    row.textContent=track.title; row.onclick=() => loadTrack(track.id, true);
+    fragment.append(row);
+  }
+  if (!fragment.childNodes.length) {
+    const p=document.createElement("p"); p.textContent = tracks.length ? "Không tìm thấy bài phù hợp." : "Thêm file nhạc từ thiết bị để bắt đầu nghe."; fragment.append(p);
+  }
+  el("list").replaceChildren(fragment);
+  el("title").textContent=tracks.find(t => t.id === selected)?.title || "Chọn một bài hát";
+}
+function position(time, duration, playing) {
+  el("seek").max=Number.isFinite(duration) ? duration : 0;
+  if (document.activeElement !== el("seek")) el("seek").value = time || 0;
+  el("elapsed").textContent=fmt(time); el("duration").textContent=fmt(duration);
+  el("play").textContent=playing ? "Ⅱ" : "▶";
+}
+function savePosition() { if (!native && selected) localStorage.setItem("session", JSON.stringify({id:selected,time:audio.currentTime || 0})); }
+function loadTrack(id, play, time=0) {
+  if (!tracks.some(t=>t.id===id)) return;
+  selected=id; draw();
+  if (native) {native.select(id,play,Math.floor(time*1000)); return;}
+  if (!desktop) return;
+  newSeek=time; audio.src=desktop.convertFileSrc(id); audio.load();
+  if (play) audio.play().catch(e=>msg(e.message));
+}
+function skip(step) {
+  const i=tracks.findIndex(t=>t.id===selected), next=tracks[i+step]; if(next) loadTrack(next.id,true);
+}
+window.onVelunaState = state => {
+  tracks=state.tracks || []; selected=state.id || ""; draw(); position(state.time,state.duration,state.playing);
+};
+window.onVelunaProgress = state => position(state.time, state.duration, state.playing);
+window.onVelunaUpdate = (version,error) => {
+  el("install").disabled=false;
+  if(error) { msg(error); return; }
+  if(!version) return;
+  pendingUpdate=version; el("version").textContent="VelunaMusic " + version;
+  if(!el("upgrade").open) el("upgrade").showModal();
+};
+window.onVelunaMessage=msg;
+async function check(manual=false) {
+  try {
+    if(native){native.checkUpdate(manual);return;}
+    const v=await desktop.invoke("check_update"); if(v) window.onVelunaUpdate(v); else if(manual) msg("Đang dùng bản mới nhất hiện có.");
+  } catch(e) {if(manual) msg("Chưa kiểm tra được cập nhật. "+e);}
+}
+el("install").onclick=async()=>{
+  el("install").disabled=true;
+  try {if(native) native.installUpdate(pendingUpdate); else await desktop.invoke("install_update",{version:pendingUpdate});}
+  catch(e){msg(String(e));el("install").disabled=false;}
+};
+el("later").onclick=()=>el("upgrade").close();
+el("add").onclick=async()=>{if(native){native.pick();return;}el("add").disabled=true;try{tracks=await desktop.invoke("add_music");draw();}catch(e){msg(String(e));}finally{el("add").disabled=false;}};
+el("query").oninput=draw;
+el("prev").onclick=()=>skip(-1);el("next").onclick=()=>skip(1);
+el("play").onclick=()=>{if(!selected) {if(tracks[0]) loadTrack(tracks[0].id,true);return;}if(native) native.toggle();else if(audio.paused) audio.play().catch(e=>msg(e.message));else audio.pause();};
+el("seek").onchange=e=>{const t=+e.target.value;if(native)native.seek(Math.round(t*1000));else if(audio.src)audio.currentTime=t;};
+audio.onloadedmetadata=()=>{if(newSeek!==null && Number.isFinite(audio.duration))audio.currentTime=Math.min(newSeek,audio.duration);newSeek=null;};
+audio.ontimeupdate=()=>{if(!document.hidden)position(audio.currentTime,audio.duration,!audio.paused);};
+audio.onplay=audio.onpause=()=>{savePosition();position(audio.currentTime,audio.duration,!audio.paused);};
+audio.onended=()=>skip(1);audio.onerror=()=>msg("Không đọc được file này. Kiểm tra định dạng và vị trí file.");
+document.addEventListener("visibilitychange",()=>{if(document.hidden)savePosition();else if(native)native.refresh();else position(audio.currentTime,audio.duration,!audio.paused);});
+window.addEventListener("pagehide",savePosition);
+el("settings").onclick=()=>el("prefs").showModal();el("done").onclick=()=>el("prefs").close();
+el("check").onclick=()=>{el("prefs").close();check(true);};
+const applyColor=c=>{document.body.style.setProperty("--accent",c);el("color").value=c;};
+applyColor(localStorage.getItem("color") || "#83d8ff");
+el("color").oninput=e=>{applyColor(e.target.value);localStorage.setItem("color",e.target.value);};
+function applyBackground(data){document.body.style.backgroundImage=data?'linear-gradient(#06152999,#061529cc),url("'+data+'")':"";}
+applyBackground(localStorage.getItem("background"));
+el("background").onchange=async e=>{
+  const file=e.target.files[0];if(!file)return;
+  try{const bitmap=await createImageBitmap(file);const canvas=document.createElement("canvas");const scale=Math.min(1,1280/Math.max(bitmap.width,bitmap.height));canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));canvas.getContext("2d").drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();const data=canvas.toDataURL("image/jpeg",.78);localStorage.setItem("background",data);applyBackground(data);}catch{msg("Không lưu được ảnh nền.");}
+};
+el("reset").onclick=()=>{localStorage.removeItem("background");applyBackground("");};
+(async()=>{try{if(native){native.refresh();}else if(desktop){tracks=await desktop.invoke("library");const old=saved();if(old.id)loadTrack(old.id,false,old.time);draw();}if(native || desktop){check();setInterval(()=>{if(!document.hidden)check();},6*3600*1000);}}catch(e){msg(String(e));}})();

@@ -1,0 +1,46 @@
+name: Check VelunaMusic
+on:
+  push:
+    branches: ['codex/dev']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo test --locked -p veluna-core
+      - run: cargo build --locked -p velunamusic --release --features custom-protocol
+      - run: node --test tests/release.test.mjs
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Set up Android toolchain
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
+          rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          cargo install cargo-ndk --version 3.5.4 --locked
+      - name: Build Rust library for Android
+        env:
+          NDK_VERSION: 27.2.12479018
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
+          cargo ndk --platform 26 -t arm64-v8a -t armeabi-v7a -t x86_64 -o android/app/src/main/jniLibs build --release --locked -p veluna-core
+      - run: gradle -p android --no-daemon :app:assembleDebug
+      - name: Verify packaged native libraries and player
+        run: |
+          apk=android/app/build/outputs/apk/debug/app-debug.apk
+          for abi in arm64-v8a armeabi-v7a x86_64; do unzip -t "$apk" "lib/$abi/libveluna_core.so"; done
+          unzip -t "$apk" assets/index.html

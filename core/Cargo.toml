@@ -1,0 +1,13 @@
+[package]
+name = "veluna-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+semver = "1"
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"

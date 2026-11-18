@@ -1,0 +1,10 @@
+/target/
+/android/.gradle/
+**/build/
+/android/local.properties
+/.vercel/
+/windows/gen/
+/android/app/src/main/jniLibs/
+*.jks
+*.keystore
+.env*
