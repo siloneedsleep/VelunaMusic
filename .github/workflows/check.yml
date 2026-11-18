@@ -28,17 +28,26 @@ jobs:
         with:
           gradle-version: '8.10.2'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Set up Android toolchain
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
           rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
-          cargo install cargo-ndk --version 3.5.4 --locked
       - name: Build Rust library for Android
         env:
           NDK_VERSION: 27.2.12479018
         run: |
-          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/$NDK_VERSION"
-          cargo ndk --platform 26 -t arm64-v8a -t armeabi-v7a -t x86_64 -o android/app/src/main/jniLibs build --release --locked -p veluna-core
+          toolchain="$ANDROID_HOME/ndk/$NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$toolchain/aarch64-linux-android26-clang"
+          export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$toolchain/armv7a-linux-androideabi26-clang"
+          export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$toolchain/x86_64-linux-android26-clang"
+          for pair in aarch64-linux-android:arm64-v8a armv7-linux-androideabi:armeabi-v7a x86_64-linux-android:x86_64; do
+            target="${pair%:*}"
+            abi="${pair#*:}"
+            cargo build --target "$target" --release --locked -p veluna-core
+            install -Dm755 "target/$target/release/libveluna_core.so" "android/app/src/main/jniLibs/$abi/libveluna_core.so"
+          done
       - run: gradle -p android --no-daemon :app:assembleDebug
       - name: Verify packaged native libraries and player
         run: |

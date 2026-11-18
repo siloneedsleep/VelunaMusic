@@ -13,6 +13,7 @@
         {refresh_token: session.refresh}, false).then(data => {
           if (auth !== session) throw Error("Phiên đăng nhập đã thay đổi.");
           remember(data);
+          return window.velunaVault.write("account", data.refresh_token);
         }).finally(() => { refreshing = null; });
       await refreshing;
     }
@@ -86,6 +87,7 @@
         {email:get("email").value.trim(),password:get("password").value}, false);
       get("password").value = "";
       if (!data.access_token) { tell("Kiểm tra email để xác nhận tài khoản rồi đăng nhập."); return; }
+      await window.velunaVault.write("account", data.refresh_token);
       remember(data); revision = 0; ready = false; panels(); tell("Đã đăng nhập.");
       await devices(); await theme(false);
     });
@@ -100,6 +102,15 @@
   });
   get("logout").onclick = () => perform(async () => {
     try { await request("/auth/v1/logout?scope=local", "POST"); }
-    finally { auth = null; revision = 0; ready = false; generation++; panels(); tell("Đã đăng xuất khỏi ứng dụng."); }
+    finally { auth = null; revision = 0; ready = false; generation++; await window.velunaVault.write("account", ""); panels(); tell("Đã đăng xuất khỏi ứng dụng."); }
   });
+  async function restore() {
+    const token = await window.velunaVault.read("account");
+    if (!token || auth) return;
+    const data = await request("/auth/v1/token?grant_type=refresh_token", "POST", {refresh_token:token}, false);
+    if (auth) return;
+    await window.velunaVault.write("account", data.refresh_token);
+    remember(data); panels(); await devices(); await theme(false);
+  }
+  if (config.url && (window.VelunaAndroid || window.__TAURI__)) perform(restore);
 })();

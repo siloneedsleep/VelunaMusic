@@ -29,6 +29,7 @@ public final class MainActivity extends Activity {
     private MediaController controller;
     private ListenableFuture<MediaController> connection;
     private WebView web;
+    private SecretStore secrets;
     private ValueCallback<Uri[]> picture;
     private boolean visible;
     private final Runnable tick = new Runnable() {
@@ -42,6 +43,7 @@ public final class MainActivity extends Activity {
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
         readLibrary();
+        secrets = new SecretStore(this);
         web = new WebView(this);
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setDomStorageEnabled(true);
@@ -180,6 +182,12 @@ public final class MainActivity extends Activity {
     }
 
     public final class Bridge {
+        @JavascriptInterface public String readSecret(String slot) {
+            try { return secrets.read(slot); } catch (Exception e) { return ""; }
+        }
+        @JavascriptInterface public boolean writeSecret(String slot, String value) {
+            try { return secrets.write(slot, value); } catch (Exception e) { return false; }
+        }
         @JavascriptInterface public void pick() { runOnUiThread(() -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT)
             .setType("audio/*").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true), 11)); }
         @JavascriptInterface public void refresh() { runOnUiThread(MainActivity.this::publish); }

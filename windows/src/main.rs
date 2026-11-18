@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod vault;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
@@ -178,6 +179,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             library,
             add_music,
+            vault::read_secret,
+            vault::write_secret,
             check_update,
             install_update
         ])
