@@ -17,7 +17,7 @@ final class SecretStore {
     private final SharedPreferences preferences;
     SecretStore(Context context) { preferences = context.getSharedPreferences("protected-credentials", Context.MODE_PRIVATE); }
     private void check(String slot) {
-        if (!java.util.Arrays.asList("account","dj-openai","dj-openrouter","spotify-pending").contains(slot)) throw new IllegalArgumentException();
+        if (!java.util.Arrays.asList("account","dj-openai","dj-openrouter","spotify-pending","lan-peer").contains(slot)) throw new IllegalArgumentException();
     }
     private SecretKey key() throws Exception {
         KeyStore store = KeyStore.getInstance("AndroidKeyStore"); store.load(null);

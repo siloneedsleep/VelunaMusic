@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod nearby;
 mod vault;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -121,7 +122,7 @@ fn import_paths(
             }
         }
     }
-    let index = library_path(&app)?;
+    let index = library_path(app)?;
     let temp = index.with_extension("tmp");
     let data = serde_json::to_vec(&tracks.iter().map(|t| &t.id).collect::<Vec<_>>())
         .map_err(|e| e.to_string())?;
@@ -233,6 +234,30 @@ async fn install_update(app: tauri::AppHandle, version: String) -> Result<(), St
     Ok(())
 }
 #[tauri::command]
+async fn open_youtube(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    if id.len() != 11
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+    {
+        return Err("Invalid YouTube video".into());
+    }
+    let url: tauri::Url = format!("https://veluna.siloneedsleep.xyz/watch?v={id}")
+        .parse()
+        .map_err(|_| "Invalid player URL")?;
+    if let Some(window) = app.get_webview_window("youtube") {
+        window.navigate(url).map_err(|e| e.to_string())?;
+        return window.set_focus().map_err(|e| e.to_string());
+    }
+    tauri::WebviewWindowBuilder::new(&app, "youtube", tauri::WebviewUrl::External(url))
+        .title("YouTube · VelunaMusic")
+        .inner_size(860.0, 620.0)
+        .min_inner_size(360.0, 300.0)
+        .build()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+#[tauri::command]
 fn open_spotify(app: tauri::AppHandle, url: String) -> Result<(), String> {
     let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
     if parsed.scheme() != "https"
@@ -270,6 +295,7 @@ fn spotify_callback(app: tauri::AppHandle) -> Result<Option<String>, String> {
 }
 fn main() {
     tauri::Builder::default()
+        .manage(nearby::Nearby::default())
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
@@ -286,19 +312,41 @@ fn main() {
             });
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            library,
-            add_music,
-            pick_album,
-            track_digest,
-            open_spotify,
-            spotify_callback,
-            analyze_audio,
-            vault::read_secret,
-            vault::write_secret,
-            check_update,
-            install_update
-        ])
+        .invoke_handler({
+            let commands: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+                library,
+                add_music,
+                pick_album,
+                track_digest,
+                nearby::nearby_interfaces,
+                nearby::nearby_start,
+                nearby::nearby_stop,
+                nearby::nearby_decide,
+                nearby::nearby_forget,
+                open_spotify,
+                open_youtube,
+                spotify_callback,
+                analyze_audio,
+                vault::read_secret,
+                vault::write_secret,
+                check_update,
+                install_update
+            ];
+            move |invoke: tauri::ipc::Invoke<tauri::Wry>| {
+                let view = invoke.message.webview_ref();
+                let local = view.url().is_ok_and(|url| {
+                    matches!(
+                        (url.scheme(), url.host_str()),
+                        ("tauri", Some("localhost")) | ("http" | "https", Some("tauri.localhost"))
+                    )
+                });
+                if view.label() != "main" || !local {
+                    invoke.resolver.reject("Commands require the local player.");
+                    return true;
+                }
+                commands(invoke)
+            }
+        })
         .run(tauri::generate_context!())
         .expect("VelunaMusic startup failed");
 }

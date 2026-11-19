@@ -15,18 +15,25 @@
   <script src="dj.js" defer></script>
   <script src="theme.js" defer></script>
   <script src="spotify.js" defer></script>
+  <script src="nearby.js" defer></script>
+  <script src="sources.js" defer></script>
   <script src="account.js" defer></script>
 </head>
 <body>
   <header>
     <div class="brand"><img src="icon.png" width="36" height="36" alt="">VelunaMusic</div>
-    <nav><button id="dj">DJ</button> <button id="account">Tài khoản</button> <button id="settings">Cài đặt</button></nav>
+    <nav><button id="nearby">Gần đây</button> <button id="dj">DJ</button> <button id="account">Tài khoản</button> <button id="settings">Cài đặt</button></nav>
   </header>
   <main>
     <section class="collection">
       <div class="heading"><h1>Thư viện</h1><button id="add">＋ Thêm nhạc</button></div>
       <label class="search">Tìm bài hát<input id="query" type="search" placeholder="Tên bài trong thư viện"></label>
       <div id="list"></div>
+      <details class="source-library"><summary>YouTube / YouTube Music</summary>
+        <form id="youtube-form"><label class="search">Liên kết video<input id="youtube-url" type="url" required placeholder="https://music.youtube.com/watch?v=…"></label>
+          <label class="search">Tên hiển thị<input id="youtube-name" maxlength="160" placeholder="Tên bài hát"></label><button type="submit">Lưu vào thư viện</button></form>
+        <p id="youtube-status" role="status"></p><div id="youtube-list"></div>
+      </details>
     </section>
     <aside>
       <img id="cover" src="icon.png" alt="" width="220" height="220">
@@ -41,6 +48,30 @@
     </aside>
   </main>
   <p role="status" id="message"></p>
+  <div id="nearby-drop" hidden>Thả bài để gửi sang PC</div>
+  <dialog id="nearby-dialog" aria-labelledby="nearby-title">
+    <h2 id="nearby-title">Thiết bị gần đây</h2>
+    <section id="nearby-pc" hidden>
+      <label>Mạng LAN <select id="nearby-ip"></select></label>
+      <button id="nearby-start">Bật nhận nhạc</button><button id="nearby-stop" hidden>Dừng nhận</button>
+      <div id="nearby-invitation" hidden><canvas id="nearby-qr" aria-label="Mã ghép đôi với PC"></canvas>
+        <p>Quét bằng VelunaMusic trên Android. Mã ghép đôi có hiệu lực 5 phút.</p>
+        <button id="nearby-copy">Sao chép mã ghép đôi</button></div>
+      <div id="nearby-confirm" hidden><p id="nearby-phone-name"></p>
+        <button id="nearby-accept">Chấp nhận</button><button id="nearby-deny">Từ chối</button></div>
+    </section>
+    <section id="nearby-phone" hidden>
+      <button id="nearby-scan">Quét QR trên PC</button>
+      <details><summary>Nhập mã ghép đôi</summary><label>Mã từ PC <input id="nearby-code" type="password" autocomplete="off"></label>
+        <button id="nearby-pair">Ghép đôi</button></details>
+      <p id="nearby-target"></p>
+      <label>Sau khi nhận <select id="nearby-action"><option value="end">Thêm cuối hàng chờ</option><option value="next">Phát tiếp theo</option><option value="now">Phát ngay</option><option value="save">Chỉ lưu file</option></select></label>
+      <label>Chọn bài <select id="nearby-tracks" multiple size="5"></select></label>
+      <button id="nearby-send">Gửi bài đã chọn</button><button id="nearby-cancel">Hủy gửi</button>
+    </section>
+    <p id="nearby-status" role="status"></p><progress hidden id="nearby-progress" max="100" value="0"></progress>
+    <button id="nearby-forget">Xóa ghép đôi</button><button id="nearby-close">Đóng</button>
+  </dialog>
   <dialog id="dj-dialog" aria-labelledby="dj-title">
     <h2 id="dj-title">DJ</h2>
     <button id="dj-folder">Chọn thư mục album</button>

@@ -17,7 +17,12 @@ function draw() {
   for (const track of tracks.filter(t => t.title.toLocaleLowerCase().includes(query))) {
     const row = document.createElement("button");
     row.className="row"; row.setAttribute("aria-current", String(track.id === selected));
-    row.textContent=track.title; row.onclick=() => loadTrack(track.id, true);
+    row.textContent=track.title; row.dataset.trackId=track.id; row.onclick=() => loadTrack(track.id, true);
+    if(native) {
+      const handle=document.createElement("span");
+      handle.className="track-drag";handle.title="Giữ và kéo sang PC";handle.textContent="⠿";
+      row.append(handle);
+    }
     fragment.append(row);
   }
   if (!fragment.childNodes.length) {

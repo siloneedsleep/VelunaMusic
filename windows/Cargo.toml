@@ -8,7 +8,7 @@ build = "build.rs"
 custom-protocol = ["tauri/custom-protocol"]
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
@@ -16,9 +16,17 @@ rfd = "0.15"
 veluna-core = { path = "../core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", features = ["json","stream"] }
+reqwest = { version = "0.12", features = ["json", "stream"] }
 sha2 = "0.10"
 tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 open = "5"
+base64 = "0.22"
+getrandom = "0.3"
+if-addrs = "0.14"
+mdns-sd = { version = "0.13", default-features = false }
+qrcode = { version = "0.14", default-features = false }
+rcgen = "0.13"
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
+tempfile = "3"
 windows-sys = { version = "0.61", features = ["Win32_Security_Credentials", "Win32_Foundation"] }

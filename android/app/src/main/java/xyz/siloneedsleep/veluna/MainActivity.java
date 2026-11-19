@@ -32,6 +32,7 @@ public final class MainActivity extends Activity {
     private ListenableFuture<MediaController> connection;
     private WebView web;
     private SecretStore secrets;
+    private NearbyClient nearby;
     private ValueCallback<Uri[]> picture;
     private boolean visible;
     private volatile String spotifyReturn = "";
@@ -48,6 +49,7 @@ public final class MainActivity extends Activity {
         acceptSpotifyIntent(getIntent());
         readLibrary();
         secrets = new SecretStore(this);
+        nearby = new NearbyClient(this,secrets,(type,value)->call("onVelunaNearby",type,value));
         web = new WebView(this);
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setDomStorageEnabled(true);
@@ -148,12 +150,14 @@ public final class MainActivity extends Activity {
     private void message(String s) { call("onVelunaMessage", s); }
     @Override protected void onStart() { super.onStart(); visible = true; publish(); }
     @Override protected void onStop() {
+        nearby.stopDiscovery();
         visible = false; handler.removeCallbacks(tick);
         if (controller != null && controller.getCurrentMediaItem() != null) getPreferences(0).edit()
             .putString("lastId", controller.getCurrentMediaItem().mediaId).putLong("lastMs", controller.getCurrentPosition()).apply();
         super.onStop();
     }
     @Override protected void onDestroy() {
+        nearby.close();
         if (connection != null) MediaController.releaseFuture(connection);
         if (picture != null) picture.onReceiveValue(null);
         network.shutdownNow();
@@ -175,6 +179,8 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        com.google.zxing.integration.android.IntentResult scan=com.google.zxing.integration.android.IntentIntegrator.parseActivityResult(request,result,data);
+        if(scan!=null){if(scan.getContents()!=null) nearby.pair(scan.getContents());return;}
         if (request == 12 && picture != null) {
             picture.onReceiveValue(result == RESULT_OK && data != null && data.getData() != null ? new Uri[]{data.getData()} : null);
             picture = null;
@@ -222,6 +228,20 @@ public final class MainActivity extends Activity {
         if(web!=null)web.evaluateJavascript("window.dispatchEvent(new Event('spotify-return'))",null);
     }
     public final class Bridge {
+        @JavascriptInterface public void openYouTube(String id) {if(id!=null && id.matches("[a-zA-Z0-9_-]{11}"))runOnUiThread(()->{
+            if(controller!=null)controller.pause();startActivity(new Intent(MainActivity.this,YouTubeActivity.class).putExtra("video",id));
+        });}
+        @JavascriptInterface public String nearbyDestination(){return nearby.destination();}
+        @JavascriptInterface public void nearbyDiscover(boolean on){runOnUiThread(()->{if(on)nearby.discover();else nearby.stopDiscovery();});}
+        @JavascriptInterface public void nearbyScan(){runOnUiThread(()->new com.google.zxing.integration.android.IntentIntegrator(MainActivity.this)
+            .setDesiredBarcodeFormats(com.google.zxing.integration.android.IntentIntegrator.QR_CODE).setPrompt("Quét mã trên PC chạy VelunaMusic").setBeepEnabled(false).initiateScan());}
+        @JavascriptInterface public void nearbyPair(String text){nearby.pair(text);}
+        @JavascriptInterface public void nearbySend(String id,String action){runOnUiThread(()->{
+            int i=index(id);if(i<0){call("onVelunaNearby","error","Bài đã rời khỏi thư viện.");return;}
+            nearby.send(id,String.valueOf(library.get(i).mediaMetadata.title),action);
+        });}
+        @JavascriptInterface public void nearbyForget(){runOnUiThread(nearby::forget);}
+        @JavascriptInterface public void nearbyCancel(){nearby.cancel();}
         @JavascriptInterface public String spotifyCallback() {return spotifyReturn;}
         @JavascriptInterface public void openSpotify(String address) {
             Uri uri=Uri.parse(address);
@@ -277,9 +297,11 @@ public final class MainActivity extends Activity {
             controller.pause(); call("onVelunaTransferReply", ticket, playback, "");
         }); }
         @JavascriptInterface public String readSecret(String slot) {
+            if ("lan-peer".equals(slot)) return "";
             try { return secrets.read(slot); } catch (Exception e) { return ""; }
         }
         @JavascriptInterface public boolean writeSecret(String slot, String value) {
+            if ("lan-peer".equals(slot)) return false;
             try { return secrets.write(slot, value); } catch (Exception e) { return false; }
         }
         @JavascriptInterface public void pick() { runOnUiThread(() -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT)

@@ -3,7 +3,7 @@ use windows_sys::Win32::Security::Credentials::*;
 fn target(slot: &str) -> Result<Vec<u16>, String> {
     if !matches!(
         slot,
-        "account" | "dj-openai" | "dj-openrouter" | "spotify-pending"
+        "account" | "dj-openai" | "dj-openrouter" | "spotify-pending" | "lan-identity"
     ) {
         return Err("Unknown credential".into());
     }
@@ -12,7 +12,13 @@ fn target(slot: &str) -> Result<Vec<u16>, String> {
 
 #[tauri::command]
 pub fn read_secret(slot: String) -> Result<String, String> {
-    let name = target(&slot)?;
+    if slot == "lan-identity" {
+        return Err("Private transport identity".into());
+    }
+    read_local(&slot)
+}
+pub(super) fn read_local(slot: &str) -> Result<String, String> {
+    let name = target(slot)?;
     let mut raw = std::ptr::null_mut();
     // Credential Manager owns this buffer until CredFree.
     unsafe {
@@ -40,7 +46,13 @@ pub fn read_secret(slot: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn write_secret(slot: String, value: String) -> Result<(), String> {
-    let mut name = target(&slot)?;
+    if slot == "lan-identity" {
+        return Err("Private transport identity".into());
+    }
+    write_local(&slot, &value)
+}
+pub(super) fn write_local(slot: &str, value: &str) -> Result<(), String> {
+    let mut name = target(slot)?;
     if value.len() > 2500 {
         return Err("Credential is too long".into());
     }
