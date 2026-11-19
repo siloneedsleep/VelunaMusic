@@ -93,6 +93,38 @@
     return res;
   }
 
+  async function home(params = "", continuation = "") {
+    const p = String(params || "").trim();
+    const c = String(continuation || "").trim();
+    const res = await invokeYtm(
+      "ytmHome",
+      "ytmusic_home",
+      { params: p || null, continuation: c || null },
+      p,
+      c
+    );
+    for (const shelf of res?.shelves || []) {
+      for (const item of shelf?.items || []) {
+        if (item && (item.type === "song" || item.type === "video")) {
+          const vid = videoId(item.video_id || item.id || "");
+          if (vid) {
+            normalizeYtmTrack({
+              ...item,
+              video_id: vid,
+              id: "ytmusic://" + vid,
+              artist_text: item.artist || item.subtitle || ""
+            });
+          }
+        }
+      }
+    }
+    return {
+      chips: Array.isArray(res?.chips) ? res.chips : [],
+      shelves: Array.isArray(res?.shelves) ? res.shelves : [],
+      continuation: res?.continuation || null
+    };
+  }
+
   async function stream(vidOrUri, forceRefresh = false) {
     const vid = videoId(vidOrUri);
     if (!vid) throw Error("Mã video không hợp lệ.");
@@ -212,6 +244,120 @@
       if (playNow && normalized[startIndex] && typeof loadTrack === "function") {
         loadTrack(normalized[startIndex].id, true);
       }
+    }
+  }
+
+  async function enqueueTracks(list) {
+    const normalized = (list || []).map(normalizeYtmTrack).filter(t => t.video_id);
+    if (!normalized.length) return 0;
+    await playTracks(normalized, 0, false);
+    if (typeof albumQueue !== "undefined" && Array.isArray(albumQueue) && albumQueue.length) {
+      for (const item of normalized) {
+        if (!albumQueue.includes(item.id)) albumQueue.push(item.id);
+      }
+      if (typeof draw === "function") draw();
+    }
+    return normalized.length;
+  }
+
+  async function openHomeCollection(item, container) {
+    const panel = container || el("home-detail");
+    if (!panel || !item) return;
+    const browseId = item.browse_id || item.id || "";
+    if (!browseId) return;
+
+    const head = document.createElement("div");
+    head.className = "home-detail-head";
+    const info = document.createElement("div");
+    info.className = "home-detail-meta";
+    const heading = document.createElement("h3");
+    heading.textContent = item.title || "Đang tải danh sách…";
+    const sub = document.createElement("p");
+    sub.textContent = "Đang tải danh sách bài hát…";
+    info.append(heading, sub);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.textContent = "Đóng";
+    closeBtn.onclick = () => {
+      panel.hidden = true;
+      panel.replaceChildren();
+    };
+    head.append(info, closeBtn);
+
+    panel.replaceChildren(head);
+    panel.hidden = false;
+
+    try {
+      const res = await album(browseId);
+      const list = Array.isArray(res?.tracks) ? res.tracks : [];
+      panel.replaceChildren();
+
+      const loadedHead = document.createElement("div");
+      loadedHead.className = "home-detail-head";
+
+      const art = document.createElement("img");
+      art.className = "home-detail-cover";
+      art.src = (Array.isArray(res?.thumbnails) && res.thumbnails.length ? res.thumbnails[res.thumbnails.length - 1] : "") || item.thumbnail || "icon.png";
+      art.alt = "";
+      art.onerror = () => { art.src = "icon.png"; };
+
+      const meta = document.createElement("div");
+      meta.className = "home-detail-meta";
+      const h3 = document.createElement("h3");
+      h3.textContent = res?.title || item.title || browseId;
+      const desc = document.createElement("p");
+      const artistText = Array.isArray(res?.artists) ? res.artists.map(a => a.name).filter(Boolean).join(", ") : "";
+      const kindLabel = item.type === "album" ? "Album" : "Playlist";
+      desc.textContent = [kindLabel, artistText || item.artist || item.subtitle, list.length + " bài"].filter(Boolean).join(" · ");
+      meta.append(h3, desc);
+
+      const actions = document.createElement("div");
+      actions.className = "home-detail-actions";
+
+      const playAll = document.createElement("button");
+      playAll.type = "button";
+      playAll.className = "primary-action";
+      playAll.textContent = "Phát ngay";
+      playAll.disabled = !list.length;
+      playAll.onclick = () => playTracks(list, 0, true).catch(e => { if (typeof msg === "function") msg(String(e)); });
+
+      const queueAll = document.createElement("button");
+      queueAll.type = "button";
+      queueAll.textContent = "+ Thêm vào hàng chờ";
+      queueAll.disabled = !list.length;
+      queueAll.onclick = async () => {
+        try {
+          const added = await enqueueTracks(list);
+          if (typeof msg === "function") msg("Đã thêm " + added + " bài vào hàng chờ.");
+        } catch (e) {
+          if (typeof msg === "function") msg(String(e));
+        }
+      };
+
+      const dismiss = document.createElement("button");
+      dismiss.type = "button";
+      dismiss.textContent = "Đóng";
+      dismiss.onclick = () => {
+        panel.hidden = true;
+        panel.replaceChildren();
+      };
+      actions.append(playAll, queueAll, dismiss);
+      loadedHead.append(art, meta, actions);
+      panel.append(loadedHead);
+
+      const rowsWrap = document.createElement("div");
+      rowsWrap.className = "home-detail-tracks";
+      if (list.length) {
+        list.forEach((tr, idx) => rowsWrap.append(createTrackRow(tr, list, idx)));
+      } else {
+        const empty = document.createElement("p");
+        empty.textContent = "Không tìm thấy bài hát trong danh sách này.";
+        rowsWrap.append(empty);
+      }
+      panel.append(rowsWrap);
+    } catch (e) {
+      sub.textContent = "Không tải được danh sách: " + (e?.message || String(e));
     }
   }
 
@@ -446,6 +592,7 @@
     sourceBadge,
     formatQuality,
     search,
+    home,
     stream,
     refreshStream,
     album,
@@ -453,8 +600,10 @@
     lyrics,
     ensureLyrics,
     playTracks,
+    enqueueTracks,
     openAlbumDetail,
     openArtistDetail,
+    openHomeCollection,
     renderSearchResults,
     metaForId: id => trackMetaCache.get(id),
     lyricsMetaForId: id => lyricsMetaCache.get(id)

@@ -31,6 +31,7 @@ public final class MainActivity extends Activity {
     static native String ytmRefreshStream(String videoId);
     static native String ytmAlbum(String browseId);
     static native String ytmArtist(String browseId);
+    static native String ytmHome(String params, String continuation);
     static native String ytmLyrics(String videoId, String title, String artist, long durationSec);
     private final ArrayList<MediaItem> library = new ArrayList<>();
     private final java.util.concurrent.ConcurrentHashMap<String, JSONObject> ytmMeta = new java.util.concurrent.ConcurrentHashMap<>();
@@ -75,7 +76,7 @@ public final class MainActivity extends Activity {
                     return local.shouldInterceptRequest(uri);
                 if (!request.isForMainFrame() && "https".equals(uri.getScheme()) && java.util.Arrays.asList(
                     "vkzrgfiopdnujookplbv.supabase.co","api.openai.com","openrouter.ai","accounts.spotify.com","api.spotify.com",
-                    "lh3.googleusercontent.com","i.ytimg.com","yt3.ggpht.com").contains(uri.getHost())) return null;
+                    "lh3.googleusercontent.com","i.ytimg.com","yt3.ggpht.com","yt3.googleusercontent.com").contains(uri.getHost())) return null;
                 return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
             }
             @Override public void onPageFinished(WebView view, String url) { publish(); }
@@ -486,6 +487,9 @@ public final class MainActivity extends Activity {
         }
         @JavascriptInterface public void ytmArtist(String ticket, String browseId) {
             runYtmTask(ticket, () -> MainActivity.ytmArtist(browseId));
+        }
+        @JavascriptInterface public void ytmHome(String ticket, String params, String continuation) {
+            runYtmTask(ticket, () -> MainActivity.ytmHome(params == null ? "" : params, continuation == null ? "" : continuation));
         }
         @JavascriptInterface public void ytmLyrics(String ticket, String videoId, String title, String artist, long durationSec) {
             runYtmTask(ticket, () -> MainActivity.ytmLyrics(videoId, title, artist, durationSec));

@@ -132,6 +132,21 @@ pub extern "system" fn Java_xyz_siloneedsleep_veluna_MainActivity_ytmArtist(
 #[cfg(target_os = "android")]
 #[allow(non_snake_case)]
 #[no_mangle]
+pub extern "system" fn Java_xyz_siloneedsleep_veluna_MainActivity_ytmHome(
+    mut env: jni::JNIEnv,
+    _: jni::objects::JClass,
+    params: jni::objects::JString,
+    continuation: jni::objects::JString,
+) -> jni::sys::jstring {
+    let p = jni_read_opt_string(&mut env, &params);
+    let c = jni_read_opt_string(&mut env, &continuation);
+    let res = ytmusic::home_json(p.as_deref(), c.as_deref());
+    jni_json_return(&mut env, res)
+}
+
+#[cfg(target_os = "android")]
+#[allow(non_snake_case)]
+#[no_mangle]
 pub extern "system" fn Java_xyz_siloneedsleep_veluna_MainActivity_ytmLyrics(
     mut env: jni::JNIEnv,
     _: jni::objects::JClass,

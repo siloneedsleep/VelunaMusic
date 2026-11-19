@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#07172e">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://lh3.googleusercontent.com https://i.ytimg.com https://yt3.ggpht.com; media-src 'self' asset: http://asset.localhost http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost https://vkzrgfiopdnujookplbv.supabase.co wss://vkzrgfiopdnujookplbv.supabase.co https://api.openai.com https://openrouter.ai https://accounts.spotify.com https://api.spotify.com; frame-src 'none'; object-src 'none'; base-uri 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://lh3.googleusercontent.com https://i.ytimg.com https://yt3.ggpht.com https://yt3.googleusercontent.com; media-src 'self' asset: http://asset.localhost http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost https://vkzrgfiopdnujookplbv.supabase.co wss://vkzrgfiopdnujookplbv.supabase.co https://api.openai.com https://openrouter.ai https://accounts.spotify.com https://api.spotify.com; frame-src 'none'; object-src 'none'; base-uri 'none'">
   <title>VelunaMusic</title>
   <link rel="stylesheet" href="player.css">
   <link rel="stylesheet" href="theme.css">
@@ -45,7 +45,12 @@
     </nav>
     <section class="collection">
       <div class="heading"><h1 id="library-heading">Thư viện</h1><button id="add">＋ Thêm nhạc</button></div>
-      <section id="home-shelves" hidden></section>
+      <section id="home-shelves" hidden aria-label="Trang chủ">
+        <div id="home-moods" class="mood-chips" role="toolbar" aria-label="Bộ lọc tâm trạng và thể loại" hidden></div>
+        <div id="home-detail" class="home-detail" hidden></div>
+        <div id="home-ytm" class="home-ytm-feed"></div>
+        <div id="home-local" class="home-local-feed"></div>
+      </section>
       <label class="search">Tìm bài hát<input id="query" type="search" placeholder="Tên bài trong thư viện"></label>
       <div id="group-picker" hidden><label><span id="group-label"></span> <select id="library-group"></select></label> <button id="group-play" disabled>Phát tất cả</button></div>
       <div id="list"></div>

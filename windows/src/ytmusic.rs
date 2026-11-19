@@ -1,12 +1,24 @@
 use veluna_core::ytmusic::{
     models::{
-        AlbumDetail, ArtistDetail, LyricsResult, SearchFilter, SearchResponse, StreamInfo, YtmError,
+        AlbumDetail, ArtistDetail, HomeResponse, LyricsResult, SearchFilter, SearchResponse,
+        StreamInfo, YtmError,
     },
     shared_service,
 };
 
 fn message(e: YtmError) -> String {
     e.to_string()
+}
+
+#[tauri::command]
+pub async fn ytmusic_home(
+    params: Option<String>,
+    continuation: Option<String>,
+) -> Result<HomeResponse, String> {
+    shared_service()
+        .get_home_page(params.as_deref(), continuation.as_deref())
+        .await
+        .map_err(message)
 }
 
 #[tauri::command]

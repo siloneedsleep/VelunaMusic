@@ -7,9 +7,13 @@ pub mod stream;
 use cipher::CipherEngine;
 use client::{InnerTubeClient, InnerTubeClientKind};
 use models::{
-    AlbumDetail, ArtistDetail, LyricsResult, SearchFilter, SearchResponse, StreamInfo, YtmError,
+    AlbumDetail, ArtistDetail, HomeResponse, LyricsResult, SearchFilter, SearchResponse,
+    StreamInfo, YtmError,
 };
-use parser::{fetch_lyrics, parse_album_detail, parse_artist_detail, parse_search_response};
+use parser::{
+    fetch_lyrics, parse_album_detail, parse_artist_detail, parse_home_response,
+    parse_search_response,
+};
 use serde_json::json;
 use std::sync::{Arc, OnceLock};
 use stream::StreamResolver;
@@ -138,6 +142,33 @@ impl YtMusicService {
         parse_artist_detail(browse_id, &raw)
     }
 
+    pub async fn get_home(&self, params: Option<&str>) -> Result<HomeResponse, YtmError> {
+        self.get_home_page(params, None).await
+    }
+
+    pub async fn get_home_page(
+        &self,
+        params: Option<&str>,
+        continuation: Option<&str>,
+    ) -> Result<HomeResponse, YtmError> {
+        let raw = self.client.browse_home(params, continuation).await?;
+        let mut page = parse_home_response(&raw);
+        if continuation.is_none() && page.shelves.len() < 3 {
+            if let Some(next_token) = page.continuation.clone() {
+                if let Ok(more_raw) = self.client.browse_home(None, Some(&next_token)).await {
+                    let more = parse_home_response(&more_raw);
+                    for shelf in more.shelves {
+                        if !page.shelves.iter().any(|s| s.title == shelf.title) {
+                            page.shelves.push(shelf);
+                        }
+                    }
+                    page.continuation = more.continuation;
+                }
+            }
+        }
+        Ok(page)
+    }
+
     pub async fn get_lyrics(
         &self,
         video_id: &str,
@@ -198,6 +229,10 @@ pub fn album_json(browse_id: &str) -> Result<String, String> {
 
 pub fn artist_json(browse_id: &str) -> Result<String, String> {
     json_result(shared_service().get_artist(browse_id))
+}
+
+pub fn home_json(params: Option<&str>, continuation: Option<&str>) -> Result<String, String> {
+    json_result(shared_service().get_home_page(params, continuation))
 }
 
 pub fn lyrics_json(

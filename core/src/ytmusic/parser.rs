@@ -1,7 +1,8 @@
 use crate::ytmusic::client::{InnerTubeClient, InnerTubeClientKind};
 use crate::ytmusic::models::{
-    AlbumDetail, AlbumRef, ArtistDetail, ArtistRef, LyricLine, LyricWord, LyricsResult,
-    RecordingKind, SearchResponse, YtmAlbumSummary, YtmArtistSummary, YtmError, YtmTrack,
+    AlbumDetail, AlbumRef, ArtistDetail, ArtistRef, HomeItem, HomeItemKind, HomeMoodChip,
+    HomeResponse, HomeShelf, LyricLine, LyricWord, LyricsResult, RecordingKind, SearchResponse,
+    YtmAlbumSummary, YtmArtistSummary, YtmError, YtmTrack,
 };
 use regex::Regex;
 use serde_json::{json, Value};
@@ -99,6 +100,53 @@ fn runs_text(val: Option<&Value>) -> String {
         return out;
     }
     String::new()
+}
+
+fn upgrade_thumbnail_url(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    static SQUARE_SIZE_RE: OnceLock<Regex> = OnceLock::new();
+    let re = SQUARE_SIZE_RE
+        .get_or_init(|| Regex::new(r"=w(\d+)-h(\d+)(-[^&?]*)?$").expect("thumb size re"));
+    if trimmed.contains("lh3.googleusercontent.com") {
+        if let Some(caps) = re.captures(trimmed) {
+            let w = caps[1].parse::<u32>().unwrap_or(0);
+            let h = caps[2].parse::<u32>().unwrap_or(0);
+            if w > 0 && w == h && w < 544 {
+                return re.replace(trimmed, "=w544-h544-l90-rj").into_owned();
+            }
+        }
+    }
+    trimmed.to_string()
+}
+
+fn best_thumbnail(val: Option<&Value>) -> String {
+    let Some(v) = val else {
+        return String::new();
+    };
+    let arr = v
+        .get("musicThumbnailRenderer")
+        .and_then(|r| r.get("thumbnail"))
+        .and_then(|t| t.get("thumbnails"))
+        .or_else(|| v.get("thumbnail").and_then(|t| t.get("thumbnails")))
+        .or_else(|| v.get("thumbnails"))
+        .and_then(|t| t.as_array());
+    let Some(list) = arr else {
+        return String::new();
+    };
+    let best = list
+        .iter()
+        .filter_map(|item| {
+            let url = item.get("url").and_then(|u| u.as_str())?;
+            let width = item.get("width").and_then(|w| w.as_u64()).unwrap_or(0);
+            Some((width, url))
+        })
+        .max_by_key(|(w, _)| *w)
+        .map(|(_, url)| url)
+        .unwrap_or("");
+    upgrade_thumbnail_url(best)
 }
 
 fn thumbnails_from(val: Option<&Value>) -> Vec<String> {
@@ -692,7 +740,13 @@ pub fn parse_album_detail(browse_id: &str, root: &Value) -> Result<AlbumDetail, 
         .and_then(|s| s.get("contents"))
         .and_then(|a| a.as_array())
         .and_then(|a| a.first())
-        .and_then(|f| f.get("musicResponsiveHeaderRenderer"))
+        .and_then(|f| {
+            f.get("musicResponsiveHeaderRenderer").or_else(|| {
+                f.get("musicEditablePlaylistDetailHeaderRenderer")
+                    .and_then(|e| e.get("header"))
+                    .and_then(|h| h.get("musicResponsiveHeaderRenderer"))
+            })
+        })
         .or_else(|| {
             root.get("header")
                 .and_then(|h| h.get("musicDetailHeaderRenderer"))
@@ -779,9 +833,13 @@ pub fn parse_album_detail(browse_id: &str, root: &Value) -> Result<AlbumDetail, 
         .and_then(|s| s.get("sectionListRenderer"))
         .and_then(|s| s.get("contents"))
         .and_then(|a| a.as_array())
-        .and_then(|a| a.first())
-        .and_then(|s| s.get("musicShelfRenderer"))
-        .and_then(|m| m.get("contents"))
+        .and_then(|arr| {
+            arr.iter().find_map(|s| {
+                s.get("musicShelfRenderer")
+                    .or_else(|| s.get("musicPlaylistShelfRenderer"))
+                    .and_then(|m| m.get("contents"))
+            })
+        })
         .or_else(|| {
             root.get("contents")
                 .and_then(|c| c.get("singleColumnBrowseResultsRenderer"))
@@ -793,9 +851,13 @@ pub fn parse_album_detail(browse_id: &str, root: &Value) -> Result<AlbumDetail, 
                 .and_then(|c| c.get("sectionListRenderer"))
                 .and_then(|s| s.get("contents"))
                 .and_then(|a| a.as_array())
-                .and_then(|a| a.first())
-                .and_then(|s| s.get("musicShelfRenderer"))
-                .and_then(|m| m.get("contents"))
+                .and_then(|arr| {
+                    arr.iter().find_map(|s| {
+                        s.get("musicShelfRenderer")
+                            .or_else(|| s.get("musicPlaylistShelfRenderer"))
+                            .and_then(|m| m.get("contents"))
+                    })
+                })
         })
         .and_then(|c| c.as_array())
         .cloned()
@@ -1500,6 +1562,486 @@ fn pick_best_lrclib_lyrics(
     best.map(|(_, r)| r)
 }
 
+fn extract_browse_page_type(nav: Option<&Value>) -> Option<String> {
+    nav?
+        .get("browseEndpoint")?
+        .get("browseEndpointContextSupportedConfigs")?
+        .get("browseEndpointContextMusicConfig")?
+        .get("pageType")?
+        .as_str()
+        .map(|s| s.to_string())
+}
+
+fn extract_watch_playlist_id(nav: Option<&Value>) -> Option<String> {
+    let n = nav?;
+    n.get("watchPlaylistEndpoint")
+        .and_then(|w| w.get("playlistId"))
+        .or_else(|| n.get("watchEndpoint").and_then(|w| w.get("playlistId")))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+fn home_artist_from_subtitle(item: &Value, subtitle: &str) -> String {
+    let mut parts = Vec::new();
+    if let Some(runs) = item
+        .get("subtitle")
+        .and_then(|s| s.get("runs"))
+        .and_then(|r| r.as_array())
+    {
+        for r in runs {
+            let txt = r.get("text").and_then(|t| t.as_str()).unwrap_or("").trim();
+            if is_separator_token(txt) || is_views_or_type_token(txt) || is_duration_token(txt) {
+                continue;
+            }
+            let lower = txt.to_ascii_lowercase();
+            if lower == "playlist" || lower == "chart" || lower.ends_with("songs") {
+                continue;
+            }
+            if txt.len() == 4 && txt.chars().all(|c| c.is_ascii_digit()) {
+                continue;
+            }
+            parts.push(txt.to_string());
+        }
+    }
+    if parts.is_empty() {
+        subtitle.trim().to_string()
+    } else {
+        parts.join(", ")
+    }
+}
+
+fn parse_home_chip_cloud(chip: &Value) -> Option<HomeMoodChip> {
+    let label = runs_text(chip.get("text")).trim().to_string();
+    if label.is_empty() {
+        return None;
+    }
+    let browse = chip
+        .get("navigationEndpoint")
+        .and_then(|n| n.get("browseEndpoint"))?;
+    let browse_id = browse
+        .get("browseId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("FEmusic_home")
+        .to_string();
+    let params = browse
+        .get("params")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if params.is_empty() && browse_id == "FEmusic_home" {
+        return None;
+    }
+    let selected = chip
+        .get("isSelected")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    Some(HomeMoodChip {
+        label,
+        params,
+        browse_id,
+        selected,
+    })
+}
+
+fn parse_home_nav_button(btn: &Value) -> Option<HomeMoodChip> {
+    let label = runs_text(btn.get("buttonText")).trim().to_string();
+    if label.is_empty() {
+        return None;
+    }
+    let browse = btn
+        .get("clickCommand")
+        .and_then(|c| c.get("browseEndpoint"))?;
+    let browse_id = browse
+        .get("browseId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("FEmusic_home")
+        .to_string();
+    let params = browse
+        .get("params")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if params.is_empty() && browse_id == "FEmusic_home" {
+        return None;
+    }
+    Some(HomeMoodChip {
+        label,
+        params,
+        browse_id,
+        selected: false,
+    })
+}
+
+fn parse_home_two_row_item(item: &Value, shelf_title_lower: &str) -> Option<HomeItem> {
+    let title = runs_text(item.get("title")).trim().to_string();
+    if title.is_empty() {
+        return None;
+    }
+    let subtitle = runs_text(item.get("subtitle")).trim().to_string();
+    let title_nav = item
+        .get("title")
+        .and_then(|t| t.get("runs"))
+        .and_then(|r| r.as_array())
+        .and_then(|a| a.first())
+        .and_then(|r| r.get("navigationEndpoint"));
+    let nav = item.get("navigationEndpoint").or(title_nav);
+    let overlay_nav = item
+        .get("thumbnailOverlay")
+        .or_else(|| item.get("overlay"))
+        .and_then(|o| o.get("musicItemThumbnailOverlayRenderer"))
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c.get("musicPlayButtonRenderer"))
+        .and_then(|b| b.get("playNavigationEndpoint"));
+
+    let (nav_vid, nav_bid, nav_vtype) = extract_nav_id(nav);
+    let (ov_vid, _, ov_vtype) = extract_nav_id(overlay_nav);
+    let page_type = extract_browse_page_type(nav);
+    let playlist_id = extract_watch_playlist_id(nav).or_else(|| extract_watch_playlist_id(overlay_nav));
+    let video_type = nav_vtype.or(ov_vtype);
+    let thumbnail = best_thumbnail(item.get("thumbnailRenderer").or_else(|| item.get("thumbnail")));
+    let artist = home_artist_from_subtitle(item, &subtitle);
+
+    if let Some(vid) = nav_vid {
+        let is_video = shelf_title_lower.contains("video")
+            || matches!(
+                video_type.as_deref(),
+                Some("MUSIC_VIDEO_TYPE_OMV" | "MUSIC_VIDEO_TYPE_UGC")
+            );
+        let kind = classify_recording_kind(&title, &subtitle, has_live_badge(item), video_type.as_deref());
+        return Some(HomeItem {
+            id: vid.clone(),
+            title,
+            subtitle,
+            artist,
+            thumbnail,
+            item_type: if is_video {
+                HomeItemKind::Video
+            } else {
+                HomeItemKind::Song
+            },
+            video_id: Some(vid),
+            browse_id: nav_bid,
+            playlist_id,
+            recording_kind: Some(kind),
+            recording_label: Some(kind.label_vi().to_string()),
+        });
+    }
+
+    if let Some(bid) = nav_bid {
+        let item_type = if page_type.as_deref() == Some("MUSIC_PAGE_TYPE_ALBUM")
+            || bid.starts_with("MPREb_")
+        {
+            HomeItemKind::Album
+        } else if page_type.as_deref() == Some("MUSIC_PAGE_TYPE_PLAYLIST")
+            || bid.starts_with("VL")
+            || bid.starts_with("RDCLAK")
+            || bid.starts_with("OLAK5uy_")
+            || bid.starts_with("PL")
+            || playlist_id.is_some()
+        {
+            HomeItemKind::Playlist
+        } else {
+            return None;
+        };
+        return Some(HomeItem {
+            id: bid.clone(),
+            title,
+            subtitle,
+            artist,
+            thumbnail,
+            item_type,
+            video_id: None,
+            browse_id: Some(bid),
+            playlist_id,
+            recording_kind: None,
+            recording_label: None,
+        });
+    }
+
+    if let Some(pid) = playlist_id {
+        let bid = if pid.starts_with("VL") {
+            pid.clone()
+        } else {
+            format!("VL{pid}")
+        };
+        return Some(HomeItem {
+            id: bid.clone(),
+            title,
+            subtitle,
+            artist,
+            thumbnail,
+            item_type: HomeItemKind::Playlist,
+            video_id: None,
+            browse_id: Some(bid),
+            playlist_id: Some(pid),
+            recording_kind: None,
+            recording_label: None,
+        });
+    }
+
+    if let Some(vid) = ov_vid {
+        let is_video = shelf_title_lower.contains("video")
+            || matches!(
+                video_type.as_deref(),
+                Some("MUSIC_VIDEO_TYPE_OMV" | "MUSIC_VIDEO_TYPE_UGC")
+            );
+        let kind = classify_recording_kind(&title, &subtitle, has_live_badge(item), video_type.as_deref());
+        return Some(HomeItem {
+            id: vid.clone(),
+            title,
+            subtitle,
+            artist,
+            thumbnail,
+            item_type: if is_video {
+                HomeItemKind::Video
+            } else {
+                HomeItemKind::Song
+            },
+            video_id: Some(vid),
+            browse_id: None,
+            playlist_id: None,
+            recording_kind: Some(kind),
+            recording_label: Some(kind.label_vi().to_string()),
+        });
+    }
+
+    None
+}
+
+fn parse_home_responsive_item(item: &Value, shelf_title_lower: &str) -> Option<HomeItem> {
+    if let Some((tr, vtype)) = parse_responsive_track(item, &[], None, &[]) {
+        let is_video = shelf_title_lower.contains("video")
+            || matches!(
+                vtype.as_deref(),
+                Some("MUSIC_VIDEO_TYPE_OMV" | "MUSIC_VIDEO_TYPE_UGC")
+            );
+        let mut sub_parts = Vec::new();
+        if !tr.artist_text.is_empty() {
+            sub_parts.push(tr.artist_text.clone());
+        }
+        if let Some(alb) = &tr.album {
+            if !alb.name.is_empty() {
+                sub_parts.push(alb.name.clone());
+            }
+        }
+        if let Some(dur) = &tr.duration_text {
+            sub_parts.push(dur.clone());
+        }
+        let thumbnail = best_thumbnail(item.get("thumbnail"));
+        return Some(HomeItem {
+            id: tr.video_id.clone(),
+            title: tr.title,
+            subtitle: sub_parts.join(" · "),
+            artist: tr.artist_text,
+            thumbnail,
+            item_type: if is_video {
+                HomeItemKind::Video
+            } else {
+                HomeItemKind::Song
+            },
+            video_id: Some(tr.video_id),
+            browse_id: None,
+            playlist_id: None,
+            recording_kind: Some(tr.recording_kind),
+            recording_label: Some(tr.recording_label),
+        });
+    }
+
+    let nav = item.get("navigationEndpoint");
+    let (_, bid_opt, _) = extract_nav_id(nav);
+    let bid = bid_opt?;
+    let page_type = extract_browse_page_type(nav);
+    let item_type = if page_type.as_deref() == Some("MUSIC_PAGE_TYPE_ALBUM") || bid.starts_with("MPREb_") {
+        HomeItemKind::Album
+    } else if page_type.as_deref() == Some("MUSIC_PAGE_TYPE_PLAYLIST")
+        || bid.starts_with("VL")
+        || bid.starts_with("OLAK5uy_")
+        || bid.starts_with("RDCLAK")
+    {
+        HomeItemKind::Playlist
+    } else {
+        return None;
+    };
+    let title = extract_responsive_runs(item, 0)
+        .first()
+        .map(|r| r.0.clone())
+        .unwrap_or_default();
+    if title.is_empty() {
+        return None;
+    }
+    let subtitle = extract_responsive_runs(item, 1)
+        .into_iter()
+        .map(|r| r.0)
+        .collect::<Vec<_>>()
+        .join("");
+    let artist = subtitle.trim().to_string();
+    Some(HomeItem {
+        id: bid.clone(),
+        title,
+        subtitle,
+        artist,
+        thumbnail: best_thumbnail(item.get("thumbnail")),
+        item_type,
+        video_id: None,
+        browse_id: Some(bid),
+        playlist_id: None,
+        recording_kind: None,
+        recording_label: None,
+    })
+}
+
+pub fn parse_home_response(root: &Value) -> HomeResponse {
+    let section_list = root
+        .get("contents")
+        .and_then(|c| c.get("singleColumnBrowseResultsRenderer"))
+        .and_then(|s| s.get("tabs"))
+        .and_then(|t| t.as_array())
+        .and_then(|a| a.first())
+        .and_then(|t| t.get("tabRenderer"))
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c.get("sectionListRenderer"))
+        .or_else(|| {
+            root.get("continuationContents")
+                .and_then(|c| c.get("sectionListContinuation"))
+        })
+        .or_else(|| {
+            root.get("contents")
+                .and_then(|c| c.get("sectionListRenderer"))
+        });
+
+    let mut chips = Vec::new();
+    let mut seen_chips = HashSet::new();
+    let mut shelves = Vec::new();
+
+    if let Some(list) = section_list {
+        if let Some(raw_chips) = list
+            .get("header")
+            .and_then(|h| h.get("chipCloudRenderer"))
+            .and_then(|c| c.get("chips"))
+            .and_then(|a| a.as_array())
+        {
+            for entry in raw_chips {
+                if let Some(chip_node) = entry.get("chipCloudChipRenderer") {
+                    if let Some(chip) = parse_home_chip_cloud(chip_node) {
+                        if seen_chips.insert((chip.label.clone(), chip.params.clone())) {
+                            chips.push(chip);
+                        }
+                    }
+                }
+            }
+        }
+
+        let sections = list
+            .get("contents")
+            .and_then(|c| c.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        for sec in sections {
+            if let Some(btn) = sec.get("musicNavigationButtonRenderer") {
+                if let Some(chip) = parse_home_nav_button(btn) {
+                    if seen_chips.insert((chip.label.clone(), chip.params.clone())) {
+                        chips.push(chip);
+                    }
+                }
+                continue;
+            }
+            if let Some(grid) = sec.get("gridRenderer") {
+                if let Some(grid_items) = grid.get("items").and_then(|a| a.as_array()) {
+                    for entry in grid_items {
+                        if let Some(btn) = entry.get("musicNavigationButtonRenderer") {
+                            if let Some(chip) = parse_home_nav_button(btn) {
+                                if seen_chips.insert((chip.label.clone(), chip.params.clone())) {
+                                    chips.push(chip);
+                                }
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+
+            let shelf_node = sec
+                .get("musicCarouselShelfRenderer")
+                .or_else(|| sec.get("musicImmersiveCarouselShelfRenderer"))
+                .or_else(|| sec.get("musicShelfRenderer"));
+            let Some(shelf) = shelf_node else {
+                continue;
+            };
+
+            let title = runs_text(
+                shelf
+                    .get("header")
+                    .and_then(|h| {
+                        h.get("musicCarouselShelfBasicHeaderRenderer")
+                            .or_else(|| h.get("musicImmersiveCarouselShelfRenderer"))
+                    })
+                    .and_then(|r| r.get("title"))
+                    .or_else(|| shelf.get("title")),
+            )
+            .trim()
+            .to_string();
+            let title_lower = title.to_ascii_lowercase();
+
+            let Some(rows) = shelf.get("contents").and_then(|c| c.as_array()) else {
+                continue;
+            };
+
+            let mut items = Vec::new();
+            let mut seen_ids = HashSet::new();
+            for row in rows {
+                if let Some(btn) = row.get("musicNavigationButtonRenderer") {
+                    if let Some(chip) = parse_home_nav_button(btn) {
+                        if seen_chips.insert((chip.label.clone(), chip.params.clone())) {
+                            chips.push(chip);
+                        }
+                    }
+                    continue;
+                }
+                let parsed = if let Some(two_row) = row.get("musicTwoRowItemRenderer") {
+                    parse_home_two_row_item(two_row, &title_lower)
+                } else if let Some(resp) = row.get("musicResponsiveListItemRenderer") {
+                    parse_home_responsive_item(resp, &title_lower)
+                } else {
+                    None
+                };
+                if let Some(item) = parsed {
+                    if seen_ids.insert(item.id.clone()) {
+                        items.push(item);
+                    }
+                }
+            }
+
+            if !items.is_empty() {
+                shelves.push(HomeShelf {
+                    title: if title.is_empty() {
+                        "Đề xuất".to_string()
+                    } else {
+                        title
+                    },
+                    items,
+                });
+            }
+        }
+    }
+
+    let continuation = section_list
+        .and_then(|l| l.get("continuations"))
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .and_then(|c| c.get("nextContinuationData"))
+        .and_then(|d| d.get("continuation"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty());
+
+    HomeResponse {
+        chips,
+        shelves,
+        continuation,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1548,5 +2090,362 @@ mod tests {
         assert_eq!(w_lines[0].words.len(), 2);
         assert_eq!(w_lines[0].words[1].start_ms, 1500);
         assert_eq!(w_lines[0].words[1].text, "world");
+    }
+
+    #[test]
+    fn home_feed_parses_mood_chips_and_carousels() {
+        let fixture = json!({
+            "contents": {
+                "singleColumnBrowseResultsRenderer": {
+                    "tabs": [{
+                        "tabRenderer": {
+                            "content": {
+                                "sectionListRenderer": {
+                                    "header": {
+                                        "chipCloudRenderer": {
+                                            "chips": [
+                                                {
+                                                    "chipCloudChipRenderer": {
+                                                        "text": { "runs": [{ "text": "Energize" }] },
+                                                        "isSelected": false,
+                                                        "navigationEndpoint": {
+                                                            "browseEndpoint": {
+                                                                "browseId": "FEmusic_home",
+                                                                "params": "ggM8Energize"
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                {
+                                                    "chipCloudChipRenderer": {
+                                                        "text": { "runs": [{ "text": "Relax" }] },
+                                                        "isSelected": true,
+                                                        "navigationEndpoint": {
+                                                            "browseEndpoint": {
+                                                                "browseId": "FEmusic_home",
+                                                                "params": "ggM8Relax"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    "contents": [
+                                        {
+                                            "musicCarouselShelfRenderer": {
+                                                "header": {
+                                                    "musicCarouselShelfBasicHeaderRenderer": {
+                                                        "title": { "runs": [{ "text": "Quick picks" }] }
+                                                    }
+                                                },
+                                                "contents": [
+                                                    {
+                                                        "musicResponsiveListItemRenderer": {
+                                                            "playlistItemData": { "videoId": "xukbqwRuN5w" },
+                                                            "thumbnail": {
+                                                                "musicThumbnailRenderer": {
+                                                                    "thumbnail": {
+                                                                        "thumbnails": [
+                                                                            { "url": "https://lh3.googleusercontent.com/demo=w120-h120-l90-rj", "width": 120, "height": 120 }
+                                                                        ]
+                                                                    }
+                                                                }
+                                                            },
+                                                            "flexColumns": [
+                                                                {
+                                                                    "musicResponsiveListItemFlexColumnRenderer": {
+                                                                        "text": { "runs": [{ "text": "Midnight Cobalt" }] }
+                                                                    }
+                                                                },
+                                                                {
+                                                                    "musicResponsiveListItemFlexColumnRenderer": {
+                                                                        "text": {
+                                                                            "runs": [
+                                                                                {
+                                                                                    "text": "Veluna Artist",
+                                                                                    "navigationEndpoint": { "browseEndpoint": { "browseId": "UCartist001" } }
+                                                                                },
+                                                                                { "text": " • " },
+                                                                                {
+                                                                                    "text": "Cobalt Sessions",
+                                                                                    "navigationEndpoint": { "browseEndpoint": { "browseId": "MPREb_album001" } }
+                                                                                }
+                                                                            ]
+                                                                        }
+                                                                    }
+                                                                }
+                                                            ]
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        },
+                                        {
+                                            "musicCarouselShelfRenderer": {
+                                                "header": {
+                                                    "musicCarouselShelfBasicHeaderRenderer": {
+                                                        "title": { "runs": [{ "text": "Featured playlists" }] }
+                                                    }
+                                                },
+                                                "contents": [
+                                                    {
+                                                        "musicTwoRowItemRenderer": {
+                                                            "title": {
+                                                                "runs": [{
+                                                                    "text": "Trending 20 Vietnam",
+                                                                    "navigationEndpoint": {
+                                                                        "browseEndpoint": {
+                                                                            "browseId": "VLOLAK5uy_trend20",
+                                                                            "browseEndpointContextSupportedConfigs": {
+                                                                                "browseEndpointContextMusicConfig": {
+                                                                                    "pageType": "MUSIC_PAGE_TYPE_PLAYLIST"
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }]
+                                                            },
+                                                            "subtitle": {
+                                                                "runs": [
+                                                                    { "text": "Chart" },
+                                                                    { "text": " • " },
+                                                                    { "text": "YouTube Charts" }
+                                                                ]
+                                                            },
+                                                            "thumbnailRenderer": {
+                                                                "musicThumbnailRenderer": {
+                                                                    "thumbnail": {
+                                                                        "thumbnails": [
+                                                                            { "url": "https://lh3.googleusercontent.com/pl=w226-h226-l90-rj", "width": 226, "height": 226 },
+                                                                            { "url": "https://lh3.googleusercontent.com/pl=w544-h544-l90-rj", "width": 544, "height": 544 }
+                                                                        ]
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    {
+                                                        "musicTwoRowItemRenderer": {
+                                                            "title": { "runs": [{ "text": "After Hours" }] },
+                                                            "subtitle": {
+                                                                "runs": [
+                                                                    { "text": "Album" },
+                                                                    { "text": " • " },
+                                                                    { "text": "The Weeknd" }
+                                                                ]
+                                                            },
+                                                            "navigationEndpoint": {
+                                                                "browseEndpoint": {
+                                                                    "browseId": "MPREb_afterhours",
+                                                                    "browseEndpointContextSupportedConfigs": {
+                                                                        "browseEndpointContextMusicConfig": {
+                                                                            "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                                                                        }
+                                                                    }
+                                                                }
+                                                            },
+                                                            "thumbnailRenderer": {
+                                                                "musicThumbnailRenderer": {
+                                                                    "thumbnail": {
+                                                                        "thumbnails": [
+                                                                            { "url": "https://lh3.googleusercontent.com/alb=w544-h544-l90-rj", "width": 544, "height": 544 }
+                                                                        ]
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        },
+                                        {
+                                            "musicImmersiveCarouselShelfRenderer": {
+                                                "header": {
+                                                    "musicCarouselShelfBasicHeaderRenderer": {
+                                                        "title": { "runs": [{ "text": "Music videos" }] }
+                                                    }
+                                                },
+                                                "contents": [
+                                                    {
+                                                        "musicTwoRowItemRenderer": {
+                                                            "title": { "runs": [{ "text": "Neon Drift (Official Video)" }] },
+                                                            "subtitle": {
+                                                                "runs": [
+                                                                    { "text": "Silo Band" },
+                                                                    { "text": " • " },
+                                                                    { "text": "2.1M views" }
+                                                                ]
+                                                            },
+                                                            "navigationEndpoint": {
+                                                                "watchEndpoint": {
+                                                                    "videoId": "dQw4w9WgXcQ",
+                                                                    "watchEndpointMusicSupportedConfigs": {
+                                                                        "watchEndpointMusicConfig": {
+                                                                            "musicVideoType": "MUSIC_VIDEO_TYPE_OMV"
+                                                                        }
+                                                                    }
+                                                                }
+                                                            },
+                                                            "thumbnailRenderer": {
+                                                                "musicThumbnailRenderer": {
+                                                                    "thumbnail": {
+                                                                        "thumbnails": [
+                                                                            { "url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/sddefault.jpg", "width": 640, "height": 480 }
+                                                                        ]
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    {
+                                                        "musicNavigationButtonRenderer": {
+                                                            "buttonText": { "runs": [{ "text": "Chill" }] },
+                                                            "clickCommand": {
+                                                                "browseEndpoint": {
+                                                                    "browseId": "FEmusic_moods_and_genres_category",
+                                                                    "params": "ggMPOg1uX1JOQWZFeDByc2Jm"
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    ],
+                                    "continuations": [{
+                                        "nextContinuationData": {
+                                            "continuation": "4qmFsgNextPageToken"
+                                        }
+                                    }]
+                                }
+                            }
+                        }
+                    }]
+                }
+            }
+        });
+
+        let home = parse_home_response(&fixture);
+        assert_eq!(home.chips.len(), 3);
+        assert_eq!(home.chips[0].label, "Energize");
+        assert_eq!(home.chips[0].params, "ggM8Energize");
+        assert!(!home.chips[0].selected);
+        assert_eq!(home.chips[1].label, "Relax");
+        assert!(home.chips[1].selected);
+        assert_eq!(home.chips[2].label, "Chill");
+        assert_eq!(home.chips[2].browse_id, "FEmusic_moods_and_genres_category");
+
+        assert_eq!(home.shelves.len(), 3);
+        assert_eq!(home.shelves[0].title, "Quick picks");
+        assert_eq!(home.shelves[0].items.len(), 1);
+        let song = &home.shelves[0].items[0];
+        assert_eq!(song.id, "xukbqwRuN5w");
+        assert_eq!(song.item_type, HomeItemKind::Song);
+        assert_eq!(song.artist, "Veluna Artist");
+        assert_eq!(
+            song.thumbnail,
+            "https://lh3.googleusercontent.com/demo=w544-h544-l90-rj"
+        );
+
+        assert_eq!(home.shelves[1].title, "Featured playlists");
+        assert_eq!(home.shelves[1].items.len(), 2);
+        assert_eq!(home.shelves[1].items[0].id, "VLOLAK5uy_trend20");
+        assert_eq!(home.shelves[1].items[0].item_type, HomeItemKind::Playlist);
+        assert_eq!(home.shelves[1].items[0].artist, "YouTube Charts");
+        assert_eq!(home.shelves[1].items[1].id, "MPREb_afterhours");
+        assert_eq!(home.shelves[1].items[1].item_type, HomeItemKind::Album);
+        assert_eq!(home.shelves[1].items[1].artist, "The Weeknd");
+
+        assert_eq!(home.shelves[2].title, "Music videos");
+        assert_eq!(home.shelves[2].items.len(), 1);
+        assert_eq!(home.shelves[2].items[0].id, "dQw4w9WgXcQ");
+        assert_eq!(home.shelves[2].items[0].item_type, HomeItemKind::Video);
+        assert_eq!(home.shelves[2].items[0].artist, "Silo Band");
+        assert_eq!(home.continuation.as_deref(), Some("4qmFsgNextPageToken"));
+    }
+
+    #[test]
+    fn home_continuation_and_playlist_detail_parsing() {
+        let cont_fixture = json!({
+            "continuationContents": {
+                "sectionListContinuation": {
+                    "contents": [{
+                        "musicCarouselShelfRenderer": {
+                            "header": {
+                                "musicCarouselShelfBasicHeaderRenderer": {
+                                    "title": { "runs": [{ "text": "Song mixes" }] }
+                                }
+                            },
+                            "contents": [{
+                                "musicTwoRowItemRenderer": {
+                                    "title": { "runs": [{ "text": "My Supermix" }] },
+                                    "subtitle": { "runs": [{ "text": "Mixed for you" }] },
+                                    "navigationEndpoint": {
+                                        "watchPlaylistEndpoint": { "playlistId": "RDTMAK5uy_mix01" }
+                                    },
+                                    "thumbnailRenderer": {
+                                        "musicThumbnailRenderer": {
+                                            "thumbnail": {
+                                                "thumbnails": [
+                                                    { "url": "https://lh3.googleusercontent.com/mix=w544-h544-l90-rj", "width": 544, "height": 544 }
+                                                ]
+                                            }
+                                        }
+                                    }
+                                }
+                            }]
+                        }
+                    }]
+                }
+            }
+        });
+        let cont = parse_home_response(&cont_fixture);
+        assert_eq!(cont.shelves.len(), 1);
+        assert_eq!(cont.shelves[0].title, "Song mixes");
+        assert_eq!(cont.shelves[0].items[0].item_type, HomeItemKind::Playlist);
+        assert_eq!(cont.shelves[0].items[0].id, "VLRDTMAK5uy_mix01");
+
+        let pl_fixture = json!({
+            "contents": {
+                "twoColumnBrowseResultsRenderer": {
+                    "tabs": [{
+                        "tabRenderer": {
+                            "content": {
+                                "sectionListRenderer": {
+                                    "contents": [{
+                                        "musicResponsiveHeaderRenderer": {
+                                            "title": { "runs": [{ "text": "Trending 20 Vietnam" }] },
+                                            "subtitle": { "runs": [{ "text": "Playlist • 2026" }] }
+                                        }
+                                    }]
+                                }
+                            }
+                        }
+                    }],
+                    "secondaryContents": {
+                        "sectionListRenderer": {
+                            "contents": [{
+                                "musicPlaylistShelfRenderer": {
+                                    "contents": [{
+                                        "musicResponsiveListItemRenderer": {
+                                            "playlistItemData": { "videoId": "aB1_CD-2345" },
+                                            "flexColumns": [
+                                                { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [{ "text": "Track One" }] } } },
+                                                { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [{ "text": "Artist One" }] } } }
+                                            ]
+                                        }
+                                    }]
+                                }
+                            }]
+                        }
+                    }
+                }
+            }
+        });
+        let detail = parse_album_detail("VLOLAK5uy_trend20", &pl_fixture).expect("playlist detail");
+        assert_eq!(detail.title, "Trending 20 Vietnam");
+        assert_eq!(detail.tracks.len(), 1);
+        assert_eq!(detail.tracks[0].video_id, "aB1_CD-2345");
     }
 }

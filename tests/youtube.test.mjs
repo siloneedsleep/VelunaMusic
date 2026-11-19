@@ -133,3 +133,106 @@ test("velunaYtm searches tracks with variant badges, formats stream quality, que
   await ctx.velunaYtm.ensureLyrics("ytmusic://" + video);
   assert.equal(saved.get("lyrics/ytmusic://" + video), "[00:01.00] Hello YouTube Music\n");
 });
+
+test("velunaYtm.home fetches mood chips and shelves via ytmusic_home and opens playlist collection", async () => {
+  const nodes = new Map(), saved = new Map(), invoked = [];
+  const element = tag => ({
+    tag,
+    children: [],
+    value: "",
+    textContent: "",
+    className: "",
+    hidden: false,
+    disabled: false,
+    append(...v) { this.children.push(...v); },
+    replaceChildren(...v) { this.children = v; },
+    setAttribute() {}
+  });
+  const el = id => { if (!nodes.has(id)) nodes.set(id, element("div")); return nodes.get(id); };
+  const tracks = [];
+  let loadedId = "";
+  const ctx = {
+    URL,
+    el,
+    tracks,
+    albumQueue: [],
+    draw() {},
+    loadTrack(id) { loadedId = id; },
+    msg() {},
+    document: { createElement: element },
+    localStorage: { getItem: k => saved.get(k), setItem: (k, v) => saved.set(k, v) },
+    desktop: {
+      async invoke(cmd, args) {
+        invoked.push({ cmd, args });
+        if (cmd === "ytmusic_home") {
+          return {
+            chips: [{ label: "Energize", params: "ggM8Energize", browse_id: "FEmusic_home", selected: false }],
+            shelves: [
+              {
+                title: "Quick picks",
+                items: [{
+                  id: video,
+                  video_id: video,
+                  title: "Home Track",
+                  subtitle: "Home Artist",
+                  artist: "Home Artist",
+                  thumbnail: "https://lh3.googleusercontent.com/t=w544-h544-l90-rj",
+                  type: "song",
+                  recording_kind: "original",
+                  recording_label: "Bản gốc"
+                }]
+              },
+              {
+                title: "Featured playlists",
+                items: [{
+                  id: "VLOLAK5uy_demo",
+                  browse_id: "VLOLAK5uy_demo",
+                  title: "Trending 20",
+                  subtitle: "Chart · YouTube Charts",
+                  artist: "YouTube Charts",
+                  thumbnail: "https://lh3.googleusercontent.com/p=w544-h544-l90-rj",
+                  type: "playlist"
+                }]
+              }
+            ],
+            continuation: "tok123"
+          };
+        }
+        if (cmd === "ytm_album") {
+          return {
+            browse_id: args.browseId,
+            title: "Trending 20",
+            artists: [{ name: "YouTube Charts" }],
+            thumbnails: ["https://lh3.googleusercontent.com/p=w544-h544-l90-rj"],
+            tracks: [{
+              video_id: video,
+              title: "Home Track",
+              artist_text: "Home Artist",
+              recording_kind: "original",
+              recording_label: "Bản gốc"
+            }]
+          };
+        }
+        if (cmd === "save_online_tracks") return null;
+        throw new Error("Unexpected command: " + cmd);
+      }
+    }
+  };
+  ctx.window = ctx;
+  vm.runInNewContext(source, ctx);
+
+  const feed = await ctx.velunaYtm.home("ggM8Energize");
+  assert.equal(invoked[0].cmd, "ytmusic_home");
+  assert.equal(invoked[0].args.params, "ggM8Energize");
+  assert.equal(feed.chips.length, 1);
+  assert.equal(feed.shelves.length, 2);
+  assert.equal(feed.continuation, "tok123");
+  assert.equal(ctx.velunaYtm.metaForId("ytmusic://" + video).title, "Home Track");
+
+  const panel = el("home-detail");
+  await ctx.velunaYtm.openHomeCollection(feed.shelves[1].items[0], panel);
+  assert.equal(panel.hidden, false);
+  const actions = panel.children[0].children[2];
+  await actions.children[0].onclick();
+  assert.equal(loadedId, "ytmusic://" + video);
+});

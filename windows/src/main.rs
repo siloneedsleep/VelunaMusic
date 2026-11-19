@@ -446,6 +446,7 @@ fn main() {
         })
         .invoke_handler({
             let commands: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+                ytmusic::ytmusic_home,
                 ytmusic::ytm_search,
                 ytmusic::ytm_album,
                 ytmusic::ytm_artist,

@@ -264,4 +264,22 @@ impl InnerTubeClient {
         }
         Ok(value)
     }
+
+    pub async fn browse_home(
+        &self,
+        params: Option<&str>,
+        continuation: Option<&str>,
+    ) -> Result<Value, YtmError> {
+        let mut payload = Map::new();
+        if let Some(token) = continuation.map(str::trim).filter(|s| !s.is_empty()) {
+            payload.insert("continuation".into(), Value::String(token.to_string()));
+        } else {
+            payload.insert("browseId".into(), Value::String("FEmusic_home".into()));
+            if let Some(p) = params.map(str::trim).filter(|s| !s.is_empty()) {
+                payload.insert("params".into(), Value::String(p.to_string()));
+            }
+        }
+        self.post_innertube(InnerTubeClientKind::WebRemix, "browse", Value::Object(payload))
+            .await
+    }
 }

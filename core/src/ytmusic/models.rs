@@ -230,3 +230,49 @@ pub struct LyricsResult {
     pub plain_lyrics: String,
     pub lines: Vec<LyricLine>,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HomeItemKind {
+    Song,
+    Playlist,
+    Album,
+    Video,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HomeMoodChip {
+    pub label: String,
+    pub params: String,
+    pub browse_id: String,
+    pub selected: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HomeItem {
+    pub id: String,
+    pub title: String,
+    pub subtitle: String,
+    pub artist: String,
+    pub thumbnail: String,
+    #[serde(rename = "type")]
+    pub item_type: HomeItemKind,
+    pub video_id: Option<String>,
+    pub browse_id: Option<String>,
+    pub playlist_id: Option<String>,
+    pub recording_kind: Option<RecordingKind>,
+    pub recording_label: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HomeShelf {
+    pub title: String,
+    pub items: Vec<HomeItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HomeResponse {
+    pub chips: Vec<HomeMoodChip>,
+    pub shelves: Vec<HomeShelf>,
+    pub continuation: Option<String>,
+}
