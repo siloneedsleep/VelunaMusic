@@ -2,22 +2,72 @@
 
 (() => {
   const repeat=el("repeat-mode"), minutes=el("sleep-minutes"), lyrics=el("lyrics-lines");
+  const nowShuffle=el("now-shuffle"), nowRepeat=el("now-repeat");
   const panel=lyrics.closest("details");
   let timer=0, shown=null, entries=[], highlighted=-1, mediaTrack=null;
+  let shuffled=localStorage.getItem("shuffle-mode")==="1", unshuffledOrder=null;
+  function syncRepeatButton(){
+    if(!nowRepeat)return;
+    const mode=repeat.value || "off";
+    nowRepeat.dataset.repeat=mode;
+    nowRepeat.setAttribute("aria-pressed",String(mode!=="off"));
+    nowRepeat.setAttribute("aria-label",mode==="one"?"Lặp lại một bài":mode==="all"?"Lặp lại hàng chờ":"Lặp lại: Tắt");
+  }
+  function syncShuffleButton(){
+    if(!nowShuffle)return;
+    nowShuffle.setAttribute("aria-pressed",String(shuffled));
+    nowShuffle.setAttribute("aria-label",shuffled?"Phát ngẫu nhiên: Bật":"Phát ngẫu nhiên: Tắt");
+  }
   repeat.value=localStorage.getItem("repeat-mode") || "off";
+  syncRepeatButton();
+  syncShuffleButton();
   repeat.onchange=()=>{
     localStorage.setItem("repeat-mode",repeat.value);
+    syncRepeatButton();
     if(native)native.repeat({off:0,one:1,all:2}[repeat.value]);
     window.velunaDJ?.stopFade();window.velunaDJ?.prepare();
+    window.dispatchEvent(new Event("veluna-playback"));
   };
-  el("shuffle-queue").onclick=()=>{
-    const order=playOrder().slice(), start=order.indexOf(selected);
-    if(start>=0)order.splice(start,1);
-    for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];}
-    if(start>=0)order.unshift(selected);
-    albumQueue=order;if(native)native.reorderQueue(JSON.stringify(order));else savePosition();drawList();
-    window.velunaDJ?.stopFade();window.velunaDJ?.prepare();msg("Đã trộn hàng chờ.");
-  };
+  function cycleRepeat(){
+    const modes=["off","all","one"];
+    const next=modes[(modes.indexOf(repeat.value)+1)%modes.length];
+    repeat.value=next;
+    repeat.onchange();
+  }
+  function toggleShuffle(force){
+    const next=typeof force==="boolean"?force:!shuffled;
+    if(next===shuffled && typeof force==="boolean")return;
+    shuffled=next;
+    localStorage.setItem("shuffle-mode",shuffled?"1":"0");
+    syncShuffleButton();
+    if(shuffled){
+      const currentOrder=playOrder().slice();
+      unshuffledOrder=currentOrder.slice();
+      const start=currentOrder.indexOf(selected);
+      if(start>=0)currentOrder.splice(start,1);
+      for(let i=currentOrder.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[currentOrder[i],currentOrder[j]]=[currentOrder[j],currentOrder[i]];}
+      if(start>=0)currentOrder.unshift(selected);
+      albumQueue=currentOrder;
+      if(native?.setShuffle)native.setShuffle(true);
+      else if(native)native.reorderQueue(JSON.stringify(currentOrder));
+      else savePosition();
+    }else{
+      if(native?.setShuffle)native.setShuffle(false);
+      else if(unshuffledOrder && unshuffledOrder.length){
+        albumQueue=unshuffledOrder.slice();
+        if(native)native.reorderQueue(JSON.stringify(albumQueue));
+        else savePosition();
+      }
+      unshuffledOrder=null;
+    }
+    drawList();
+    window.velunaDJ?.stopFade();window.velunaDJ?.prepare();
+    window.dispatchEvent(new Event("veluna-playback"));
+    msg(shuffled?"Đã bật phát ngẫu nhiên.":"Đã tắt phát ngẫu nhiên.");
+  }
+  if(nowShuffle)nowShuffle.onclick=()=>toggleShuffle();
+  if(nowRepeat)nowRepeat.onclick=()=>cycleRepeat();
+  el("shuffle-queue").onclick=()=>toggleShuffle(true);
   function planSleep(deadline,changed) {
     clearTimeout(timer);
     if(changed && native)native.sleepUntil(deadline);
@@ -170,5 +220,21 @@
       if(mediaTrack!==selected){mediaTrack=selected;const title=tracks.find(t=>t.id===selected)?.title || "VelunaMusic";
         if(window.MediaMetadata)media.metadata=new MediaMetadata({title,artwork:[{src:new URL("icon.png",location.href).href,type:"image/png"}]});}
     }
-  },reloadLyrics(){shown=null;if(visible()){render();progress(currentTime());}}};
+  },resetForTrack(trackId, timeSec=0){
+    clearTimeout(wake);
+    shown=null;
+    highlighted=activeWord=-1;
+    clockTime=Math.max(0, Number(timeSec) || 0);
+    clockAt=performance.now();
+    if(lyrics)lyrics.scrollTop=0;
+    if(visible()){render();progress(clockTime);}
+    if(media && trackId && mediaTrack!==trackId){
+      mediaTrack=trackId;
+      const title=tracks.find(t=>t.id===trackId)?.title || "VelunaMusic";
+      if(window.MediaMetadata)media.metadata=new MediaMetadata({title,artwork:[{src:new URL("icon.png",location.href).href,type:"image/png"}]});
+    }
+  },reloadLyrics(){shown=null;if(visible()){render();progress(currentTime());}},
+  isShuffled:()=>shuffled,
+  toggleShuffle,
+  cycleRepeat};
 })();

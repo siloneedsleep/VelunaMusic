@@ -54,6 +54,57 @@ async function exercise(WebSocket,auth){
 test("remote selects a listening device, reads its queue and acknowledges playback and volume",async()=>{
   await exercise(memorySocket(),{id:"fixture",access:"fixture",expires:Date.now()+3600000});
 });
+test("remote snapshot reports Connect state and executes shuffle and repeat commands",async()=>{
+  const WebSocket=memorySocket(), auth={id:"connect-fixture",access:"token",expires:Date.now()+3600000};
+  const makePeer=(id,listen)=>{
+    let activeAuth=auth;
+    const nodes=new Map(), keys=new Map(), peerUpdates=[];
+    let shuffled=false;
+    const el=name=>{
+      if(!nodes.has(name))nodes.set(name,{value:name==="repeat-mode"?"off":"",open:name==="connect-dialog",max:180,
+        replaceChildren(...items){this.items=items;this.value=(items.find(o=>o.selected) || items[0])?.value || "";},
+        querySelectorAll:()=>[]});
+      return nodes.get(name);
+    };
+    const audio={paused:false,currentTime:42.5,duration:180,volume:.8,play(){this.paused=false;return Promise.resolve();},pause(){this.paused=true;}};
+    const env={WebSocket,config,crypto:webcrypto,URL,Date,setTimeout,clearTimeout,setInterval,clearInterval,
+      tracks:[{id:"ytmusic://dQw4w9WgXcQ",title:"Connect Track"}],native:null,audio,selected:"ytmusic://dQw4w9WgXcQ",
+      playOrder:()=>["ytmusic://dQw4w9WgXcQ"],el,
+      Option:class{constructor(text,value,_d,selected){Object.assign(this,{text,value,selected});}},
+      document:{hidden:false,body:{dataset:{playing:"true"}},addEventListener(){}},
+      localStorage:{getItem:k=>keys.get(k),setItem:(k,v)=>keys.set(k,v)}};
+    env.window={
+      addEventListener(){},
+      velunaListening:{
+        isShuffled:()=>shuffled,
+        toggleShuffle(v){shuffled=Boolean(v);}
+      }
+    };
+    if(listen)keys.set("remote/"+auth.id,"1");
+    vm.createContext(env);vm.runInContext(code,env);
+    const remote=env.playerRemote({config,device:()=>({device_id:id,label:id==="pc"?"Windows PC":"Galaxy A37 5G",platform:id==="pc"?"windows":"android"}),
+      session:()=>activeAuth,refresh:async()=>{},onPeersChange:(list)=>peerUpdates.push(list)});
+    remote.update();
+    return {remote,el,peerUpdates,isShuffled:()=>shuffled,close(){activeAuth=null;remote.update();}};
+  };
+  const pc=makePeer("pc",true), phone=makePeer("phone",false);
+  try{
+    await until(()=>phone.remote.getPeers().some(p=>p.id==="pc"));
+    const peer=phone.remote.getPeers().find(p=>p.id==="pc");
+    assert.equal(peer.platform,"windows");
+    assert.equal(peer.trackId,"ytmusic://dQw4w9WgXcQ");
+    assert.equal(peer.positionMs,42500);
+    assert.equal(peer.isPlaying,true);
+    assert.equal(peer.currentIndex,0);
+    assert.equal(peer.shuffle,false);
+    assert.equal(peer.repeat,"off");
+    assert.equal(phone.remote.selectPeer("pc"),true);
+    phone.remote.command("shuffle",1);
+    await until(()=>pc.isShuffled()===true && phone.remote.getActivePeer()?.shuffle===true);
+    phone.remote.command("repeat",1);
+    await until(()=>pc.el("repeat-mode").value==="one" && phone.remote.getActivePeer()?.repeat==="one");
+  }finally{phone.close();pc.close();}
+});
 test("live Supabase private broadcast and account isolation",{skip:!process.env.VELUNA_QA_ACCOUNTS},async()=>{
   const accounts=JSON.parse(process.env.VELUNA_QA_ACCOUNTS);
   async function login(q){

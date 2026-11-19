@@ -1,6 +1,8 @@
 use semver::Version;
 pub mod dj;
+pub mod http;
 pub mod media;
+pub mod offline;
 pub mod ytmusic;
 
 /// Only offer stable releases newer than the installed build.

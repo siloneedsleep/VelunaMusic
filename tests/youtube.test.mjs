@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import vm from "node:vm";
 
+const utilsCode = await readFile(new URL("../ui/utils.js", import.meta.url), "utf8");
 const source = await readFile(new URL("../ui/sources.js", import.meta.url), "utf8");
 const watch = await readFile(new URL("../site/watch.js", import.meta.url), "utf8");
 const video = "aB1_CD-2345";
@@ -12,9 +13,13 @@ test("the library accepts YouTube Music links and opens the selected video by ID
   const element = () => ({children: [], value: "", append(...v){this.children.push(...v);},
     replaceChildren(...v){this.children=v;}, setAttribute(){}});
   const el = id => { if (!nodes.has(id)) nodes.set(id,element()); return nodes.get(id); };
-  vm.runInNewContext(source,{URL,el,document:{createElement:element},
+  const ctx = {URL,el,document:{createElement:element},
     localStorage:{getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)},
-    native:{openYouTube:id=>opened.push(id)}});
+    native:{openYouTube:id=>opened.push(id)}};
+  ctx.window = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(utilsCode, ctx);
+  vm.runInContext(source, ctx);
   const submit = url => {
     el("youtube-url").value=url;el("youtube-name").value="Demo";
     el("youtube-form").onsubmit({preventDefault(){}});
@@ -112,7 +117,9 @@ test("velunaYtm searches tracks with variant badges, formats stream quality, que
     }
   };
   ctx.window = ctx;
-  vm.runInNewContext(source, ctx);
+  vm.createContext(ctx);
+  vm.runInContext(utilsCode, ctx);
+  vm.runInContext(source, ctx);
 
   el("ytm-query").value = "Demo Song";
   el("ytm-filter").value = "songs";
@@ -219,7 +226,9 @@ test("velunaYtm.home fetches mood chips and shelves via ytmusic_home and opens p
     }
   };
   ctx.window = ctx;
-  vm.runInNewContext(source, ctx);
+  vm.createContext(ctx);
+  vm.runInContext(utilsCode, ctx);
+  vm.runInContext(source, ctx);
 
   const feed = await ctx.velunaYtm.home("ggM8Energize");
   assert.equal(invoked[0].cmd, "ytmusic_home");

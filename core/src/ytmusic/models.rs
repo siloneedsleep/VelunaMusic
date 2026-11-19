@@ -73,6 +73,7 @@ pub enum SearchFilter {
     Songs,
     Videos,
     Albums,
+    Playlists,
     Artists,
 }
 
@@ -82,6 +83,7 @@ impl SearchFilter {
             "songs" | "song" | "music" => SearchFilter::Songs,
             "videos" | "video" | "mv" => SearchFilter::Videos,
             "albums" | "album" => SearchFilter::Albums,
+            "playlists" | "playlist" => SearchFilter::Playlists,
             "artists" | "artist" => SearchFilter::Artists,
             _ => SearchFilter::All,
         }
@@ -93,6 +95,7 @@ impl SearchFilter {
             SearchFilter::Songs => Some("EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"),
             SearchFilter::Videos => Some("EgWKAQIQAWoKEAkQChAFEAMQBA%3D%3D"),
             SearchFilter::Albums => Some("EgWKAQIYAWoKEAkQChAFEAMQBA%3D%3D"),
+            SearchFilter::Playlists => Some("EgeKAQQoAEABahIQAxAJEAUQDhAEEAoQFRAREBA%3D"),
             SearchFilter::Artists => Some("EgWKAQIgAWoKEAkQChAFEAMQBA%3D%3D"),
         }
     }
@@ -147,11 +150,23 @@ pub struct YtmArtistSummary {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct YtmPlaylistSummary {
+    pub browse_id: String,
+    pub playlist_id: Option<String>,
+    pub title: String,
+    pub author: Option<String>,
+    pub track_count_text: Option<String>,
+    pub thumbnails: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchResponse {
     pub query: String,
     pub tracks: Vec<YtmTrack>,
     pub videos: Vec<YtmTrack>,
     pub albums: Vec<YtmAlbumSummary>,
+    #[serde(default)]
+    pub playlists: Vec<YtmPlaylistSummary>,
     pub artists: Vec<YtmArtistSummary>,
 }
 

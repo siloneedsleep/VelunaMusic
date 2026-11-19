@@ -18,7 +18,7 @@ function nativeTransfer(method, ...args) {
 }
 async function inspectTrack(id) {
   if (native) return nativeTransfer("inspectTrack", id);
-  const online=/^ytmusic:\/\/[\w-]{11}$/.test(id);
+  const online = Boolean(window.velunaUtils ? window.velunaUtils.videoId(id) && String(id).startsWith("ytmusic://") : /^ytmusic:\/\/[\w-]{11}$/.test(id));
   const src=online ? (await window.velunaYtm.stream(id)).url : desktop.convertFileSrc(id);
   const probe=new Audio();
   try {
@@ -32,6 +32,16 @@ async function inspectTrack(id) {
     return online?id:await desktop.invoke("track_digest",{id});
   } finally {probe.oncanplay=probe.onprogress=probe.onerror=null;probe.removeAttribute("src");probe.load();}
 }
+function compensatedPositionSec(positionMs, updatedAt, playing, nowMs = Date.now()) {
+  const base = Math.max(0, Number(positionMs) || 0) / 1000;
+  if (!playing || updatedAt == null || updatedAt === "") return base;
+  const stamp = typeof updatedAt === "number" ? updatedAt : Date.parse(updatedAt);
+  if (!Number.isFinite(stamp)) return base;
+  const deltaMs = nowMs - stamp;
+  if (deltaMs > 0 && deltaMs <= 15000) return base + deltaMs / 1000;
+  return base;
+}
+
 function accountHandoff({request, deviceId, tell, active, user=()=>""}) {
   const panel = el("transfer"), choices = el("transfer-track"), accept = el("accept-transfer");
   let source = null, target = null, offer = null, timer = 0, polling = false, epoch = 0;
@@ -57,7 +67,8 @@ function accountHandoff({request, deviceId, tell, active, user=()=>""}) {
   }
   function schedule(ms = 2500) {
     clearTimeout(timer);
-    if(active() && (source || target || (!document.hidden && el("account-dialog").open)))timer=setTimeout(()=>poll(!!(source||target)),ms);
+    const uiOpen = !document.hidden && (el("account-dialog").open || el("connect-dialog")?.open);
+    if(active() && (source || target || uiOpen))timer=setTimeout(()=>poll(!!(source||target)),ms);
   }
   function renderOffer(row) {
     if (offer?.transfer_id === row.transfer_id && !panel.hidden) return;
@@ -156,7 +167,8 @@ function accountHandoff({request, deviceId, tell, active, user=()=>""}) {
         }
       } else if (row.target_device === me && row.phase === "released" && target?.transfer === row.transfer_id) {
         if (!target.started) {
-          try{await startTransferredTrack(target.id,row.playing,row.position_ms / 1000);}
+          const targetSec = compensatedPositionSec(row.position_ms, row.updated_at, row.playing);
+          try{await startTransferredTrack(target.id,row.playing,targetSec);}
           catch(e){await advance(row.transfer_id,"cancelled");throw e;}
           target.started = true;persist();
         }
@@ -168,7 +180,7 @@ function accountHandoff({request, deviceId, tell, active, user=()=>""}) {
   document.addEventListener("visibilitychange", () => {
     clearTimeout(timer);schedule(150);
   });
-  return {wake:()=>poll(true),open() { schedule(50); }, close() { if (!source && !target) clearTimeout(timer); }, clear, send};
+  return {wake:()=>poll(true),open() { schedule(50); }, close() { if (!source && !target) clearTimeout(timer); }, clear, send, compensatedPositionSec};
 }
 async function startTransferredTrack(id, play, time) {
   if (!tracks.some(item => item.id === id)) throw Error("File đã rời khỏi thư viện.");

@@ -2,7 +2,7 @@ use crate::ytmusic::client::{InnerTubeClient, InnerTubeClientKind};
 use crate::ytmusic::models::{
     AlbumDetail, AlbumRef, ArtistDetail, ArtistRef, HomeItem, HomeItemKind, HomeMoodChip,
     HomeResponse, HomeShelf, LyricLine, LyricWord, LyricsResult, RecordingKind, SearchResponse,
-    YtmAlbumSummary, YtmArtistSummary, YtmError, YtmTrack,
+    YtmAlbumSummary, YtmArtistSummary, YtmError, YtmPlaylistSummary, YtmTrack,
 };
 use regex::Regex;
 use serde_json::{json, Value};
@@ -102,7 +102,7 @@ fn runs_text(val: Option<&Value>) -> String {
     String::new()
 }
 
-fn upgrade_thumbnail_url(raw: &str) -> String {
+pub fn upgrade_thumbnail_url(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return String::new();
@@ -122,7 +122,15 @@ fn upgrade_thumbnail_url(raw: &str) -> String {
     trimmed.to_string()
 }
 
-fn best_thumbnail(val: Option<&Value>) -> String {
+pub fn default_video_thumbnails(video_id: &str) -> Vec<String> {
+    vec![
+        format!("https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"),
+        format!("https://i.ytimg.com/vi/{video_id}/sddefault.jpg"),
+        format!("https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"),
+    ]
+}
+
+pub fn best_thumbnail(val: Option<&Value>) -> String {
     let Some(v) = val else {
         return String::new();
     };
@@ -535,6 +543,73 @@ fn parse_responsive_album(item: &Value) -> Option<YtmAlbumSummary> {
     })
 }
 
+fn parse_responsive_playlist(item: &Value) -> Option<YtmPlaylistSummary> {
+    let nav = item.get("navigationEndpoint");
+    let (_, browse_opt, _) = extract_nav_id(nav);
+    let browse_id = browse_opt?;
+    let page_type = extract_browse_page_type(nav);
+    let is_playlist = page_type.as_deref() == Some("MUSIC_PAGE_TYPE_PLAYLIST")
+        || browse_id.starts_with("VL")
+        || browse_id.starts_with("RDCLAK")
+        || browse_id.starts_with("PL");
+    if !is_playlist {
+        return None;
+    }
+    let title = extract_responsive_runs(item, 0)
+        .first()
+        .map(|r| r.0.clone())
+        .unwrap_or_default();
+    if title.is_empty() {
+        return None;
+    }
+    let runs = extract_responsive_runs(item, 1);
+    let mut author_parts = Vec::new();
+    let mut track_count_text = None;
+    for (txt, _) in runs {
+        let t = txt.trim();
+        let lower = t.to_ascii_lowercase();
+        if is_separator_token(t) || lower == "playlist" || lower == "community playlist" {
+            continue;
+        }
+        if lower.contains("song") || lower.contains("track") || lower.contains("view") || lower.contains("bài") {
+            if track_count_text.is_none() {
+                track_count_text = Some(t.to_string());
+            }
+            continue;
+        }
+        author_parts.push(t.to_string());
+    }
+    let playlist_id = item
+        .get("overlay")
+        .and_then(|o| o.get("musicItemThumbnailOverlayRenderer"))
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c.get("musicPlayButtonRenderer"))
+        .and_then(|b| b.get("playNavigationEndpoint"))
+        .and_then(|n| n.get("watchPlaylistEndpoint"))
+        .and_then(|w| w.get("playlistId"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .or_else(|| browse_id.strip_prefix("VL").map(|s| s.to_string()));
+    let thumb = best_thumbnail(item.get("thumbnail"));
+    let thumbnails = if thumb.is_empty() {
+        thumbnails_from(item.get("thumbnail"))
+    } else {
+        vec![thumb]
+    };
+    Some(YtmPlaylistSummary {
+        browse_id,
+        playlist_id,
+        title,
+        author: if author_parts.is_empty() {
+            None
+        } else {
+            Some(author_parts.join(", "))
+        },
+        track_count_text,
+        thumbnails,
+    })
+}
+
 fn parse_responsive_artist(item: &Value) -> Option<YtmArtistSummary> {
     let nav = item.get("navigationEndpoint");
     let (_, browse_opt, _) = extract_nav_id(nav);
@@ -562,11 +637,13 @@ pub fn parse_search_response(query: &str, root: &Value) -> SearchResponse {
     let mut tracks = Vec::new();
     let mut videos = Vec::new();
     let mut albums = Vec::new();
+    let mut playlists = Vec::new();
     let mut artists = Vec::new();
 
     let mut seen_track_ids = HashSet::new();
     let mut seen_video_ids = HashSet::new();
     let mut seen_album_ids = HashSet::new();
+    let mut seen_playlist_ids = HashSet::new();
     let mut seen_artist_ids = HashSet::new();
 
     let sections = root
@@ -653,6 +730,18 @@ pub fn parse_search_response(query: &str, root: &Value) -> SearchResponse {
                         thumbnails: thumbs,
                         is_explicit: false,
                     });
+                } else if (bid.starts_with("VL") || bid.starts_with("RDCLAK") || bid.starts_with("PL"))
+                    && seen_playlist_ids.insert(bid.clone())
+                {
+                    let pid = bid.strip_prefix("VL").map(|s| s.to_string());
+                    playlists.push(YtmPlaylistSummary {
+                        browse_id: bid,
+                        playlist_id: pid,
+                        title: card_title,
+                        author: if card_sub.is_empty() { None } else { Some(card_sub) },
+                        track_count_text: None,
+                        thumbnails: thumbs,
+                    });
                 }
             }
 
@@ -708,6 +797,12 @@ pub fn parse_search_response(query: &str, root: &Value) -> SearchResponse {
                     }
                     continue;
                 }
+                if let Some(pl) = parse_responsive_playlist(item) {
+                    if seen_playlist_ids.insert(pl.browse_id.clone()) {
+                        playlists.push(pl);
+                    }
+                    continue;
+                }
                 if let Some(art) = parse_responsive_artist(item) {
                     if seen_artist_ids.insert(art.browse_id.clone()) {
                         artists.push(art);
@@ -722,6 +817,7 @@ pub fn parse_search_response(query: &str, root: &Value) -> SearchResponse {
         tracks,
         videos,
         albums,
+        playlists,
         artists,
     }
 }
@@ -2447,5 +2543,76 @@ mod tests {
         assert_eq!(detail.title, "Trending 20 Vietnam");
         assert_eq!(detail.tracks.len(), 1);
         assert_eq!(detail.tracks[0].video_id, "aB1_CD-2345");
+    }
+
+    #[test]
+    fn search_response_parses_playlists_and_filter_param() {
+        use crate::ytmusic::models::SearchFilter;
+        assert_eq!(SearchFilter::from_opt(Some("playlists")), SearchFilter::Playlists);
+        assert!(SearchFilter::Playlists.params().is_some());
+
+        let fixture = json!({
+            "contents": {
+                "tabbedSearchResultsRenderer": {
+                    "tabs": [{
+                        "tabRenderer": {
+                            "content": {
+                                "sectionListRenderer": {
+                                    "contents": [{
+                                        "musicShelfRenderer": {
+                                            "title": { "runs": [{ "text": "Community playlists" }] },
+                                            "contents": [{
+                                                "musicResponsiveListItemRenderer": {
+                                                    "navigationEndpoint": {
+                                                        "browseEndpoint": {
+                                                            "browseId": "VLPLchill123",
+                                                            "browseEndpointContextSupportedConfigs": {
+                                                                "browseEndpointContextMusicConfig": {
+                                                                    "pageType": "MUSIC_PAGE_TYPE_PLAYLIST"
+                                                                }
+                                                            }
+                                                        }
+                                                    },
+                                                    "thumbnail": {
+                                                        "musicThumbnailRenderer": {
+                                                            "thumbnail": {
+                                                                "thumbnails": [
+                                                                    { "url": "https://lh3.googleusercontent.com/pl=w120-h120-l90-rj", "width": 120, "height": 120 }
+                                                                ]
+                                                            }
+                                                        }
+                                                    },
+                                                    "flexColumns": [
+                                                        { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [{ "text": "Late Night Lo-Fi" }] } } },
+                                                        { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [
+                                                            { "text": "Playlist" },
+                                                            { "text": " • " },
+                                                            { "text": "Veluna Curator" },
+                                                            { "text": " • " },
+                                                            { "text": "42 songs" }
+                                                        ] } } }
+                                                    ]
+                                                }
+                                            }]
+                                        }
+                                    }]
+                                }
+                            }
+                        }
+                    }]
+                }
+            }
+        });
+        let res = parse_search_response("lofi", &fixture);
+        assert_eq!(res.playlists.len(), 1);
+        assert_eq!(res.playlists[0].browse_id, "VLPLchill123");
+        assert_eq!(res.playlists[0].playlist_id.as_deref(), Some("PLchill123"));
+        assert_eq!(res.playlists[0].title, "Late Night Lo-Fi");
+        assert_eq!(res.playlists[0].author.as_deref(), Some("Veluna Curator"));
+        assert_eq!(res.playlists[0].track_count_text.as_deref(), Some("42 songs"));
+        assert_eq!(
+            res.playlists[0].thumbnails[0],
+            "https://lh3.googleusercontent.com/pl=w544-h544-l90-rj"
+        );
     }
 }

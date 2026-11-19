@@ -180,11 +180,19 @@ impl YtMusicService {
     }
 }
 
+pub use parser::{best_thumbnail, default_video_thumbnails, upgrade_thumbnail_url};
+
 pub fn valid_video_id(id: &str) -> bool {
     id.len() == 11
         && id
             .bytes()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_'))
+}
+
+pub fn normalize_video_id(raw: &str) -> Option<&str> {
+    let trimmed = raw.trim();
+    let candidate = trimmed.strip_prefix("ytmusic://").unwrap_or(trimmed);
+    valid_video_id(candidate).then_some(candidate)
 }
 
 fn shared_runtime() -> &'static Runtime {

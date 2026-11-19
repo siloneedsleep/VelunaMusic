@@ -184,11 +184,13 @@ The live Supabase isolation test in `tests/` is skipped unless the `VELUNA_QA_AC
 - **Content integrity.** Local tracks are identified by SHA-256 digests for offline playlist sync and handoff, and LAN transfers are verified against the sender's SHA-256 before they enter the library.
 - **Loopback and LAN servers.** The Windows media server binds to the loopback interface, requires a random capability token, rejects foreign origins and accepts only valid single byte ranges. The LAN receiver requires QR pairing, which carries an access token and the fingerprint of the receiver's TLS certificate for pinning.
 - **Account data.** Supabase stores accounts, devices, library metadata, handoff state and short-lived remote commands with per-account isolation defined in `supabase/migrations/`.
-- **Website.** `site/vercel.json` applies a strict Content Security Policy that limits scripts, styles and images to the site itself and network access to the GitHub API.
+- **Website & Legal Policies.** `site/vercel.json` applies a strict Content Security Policy that limits scripts, styles and images to the site itself and network access to the GitHub API. See the [Privacy Policy](https://veluna.siloneedsleep.xyz/privacy) and [Terms of Service](https://veluna.siloneedsleep.xyz/terms).
 
 ## Acknowledgements and License
 
 VelunaMusic is licensed under the [GNU General Public License v3.0](LICENSE). It adapts components and technical references from [SimpMusic](https://github.com/maxrave-dev/SimpMusic) and [PipePipeExtractor](https://github.com/maxrave-dev/PipePipeExtractor), and bundles the Poppins typeface under the SIL Open Font License 1.1. See [THIRD_PARTY.md](THIRD_PARTY.md) for the full list of adaptations and license texts.
+
+Free code signing on Windows is provided by [SignPath.io](https://signpath.io), with a certificate by the [SignPath Foundation](https://signpath.org).
 
 Developed by [@siloneedsleep](https://github.com/siloneedsleep).
 

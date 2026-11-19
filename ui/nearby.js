@@ -44,6 +44,7 @@
       if(!dialog.open)dialog.showModal();
     } else if(event==="paired") {
       target=data;el("nearby-target").textContent=target?"PC đã ghép đôi · "+target:"Chưa ghép đôi PC.";announce(el("nearby-target").textContent);
+      window.dispatchEvent(new Event("veluna-nearby-change"));
     } else if(event==="progress") {
       el("nearby-progress").hidden=false;el("nearby-progress").value=Number(data);
     } else if(event==="received") received(data).catch(failure);
@@ -93,6 +94,29 @@
   el("nearby-pair").onclick=()=>{const box=el("nearby-code");native.nearbyPair(box.value.trim());box.value="";};
   el("nearby-send").onclick=()=>enqueue(Array.from(el("nearby-tracks").selectedOptions,o=>o.value));
   el("nearby-cancel").onclick=()=>{queue=[];native.nearbyCancel();};
+  window.velunaNearby={
+    isPaired:()=>Boolean(target),
+    destination:()=>target,
+    open:()=>el("nearby").click(),
+    sendForHandoff(id, action="now") {
+      if(!native){announce("Mở nhận LAN trên PC và gửi từ điện thoại đã ghép đôi.");el("nearby").click();return false;}
+      if(!target){announce("Quét mã QR từ PC trước khi gửi qua LAN.");el("nearby").click();return false;}
+      queue.push({id,action});pump();return true;
+    },
+    async getLanInfo() {
+      if(native){
+        target=native.nearbyDestination() || "";
+        return {platform:"android",paired:Boolean(target),address:target,peers:target?[target]:[]};
+      }
+      if(desktop){
+        try{
+          const info=await desktop.invoke("nearby_status");
+          return {platform:"windows",paired:(info?.peers?.length||0)>0,active:Boolean(info?.active),address:info?.address||"",peers:info?.peers||[]};
+        }catch{}
+      }
+      return {platform:"unknown",paired:false,active:false,address:"",peers:[]};
+    }
+  };
   if(!native)return;
   let press=null;
   const list=el("list");

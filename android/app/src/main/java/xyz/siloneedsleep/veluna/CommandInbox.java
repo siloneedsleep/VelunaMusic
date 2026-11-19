@@ -64,7 +64,7 @@ final class CommandInbox implements AutoCloseable {
           if (turn != generation)
             return;
           CloudSession.request("/rest/v1/rpc/veluna_command_ack", token,
-              RemotePlayback.obj(
+              MediaHelpers.jsonObj(
                   "p_id", row.getString("id"), "p_recipient", device, "p_result", error));
         }
         if (rows.length() == 32)

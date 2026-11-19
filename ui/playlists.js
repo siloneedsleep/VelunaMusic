@@ -2,18 +2,134 @@
 
 function playlistLibrary(request) {
   const favoriteId = "00000000-0000-4000-8000-000000000002";
+  const historyId = "00000000-0000-4000-8000-000000000003";
   const panel = el("playlist-panel"), choice = el("playlist-select"), local = el("playlist-track");
   const tell = text => {el("playlist-status").textContent = text;};
   let owner, documents = [], active = favoriteId, generation = 0, syncing = false, again = false;
+  let historyRevision = 0, historyDirty = false, historySyncing = false, historyTimer = 0;
   const storageKey = () => "veluna-playlists/" + (owner || "local");
+  const historyKey = () => "veluna-history-cloud/" + (owner || "local");
   const current = () => documents.find(d => d.id === active);
   function newList(id, name, kind = "playlist") {
     return {id,kind,revision:0,dirty:false,payload:{name,items:[],operation:""}};
   }
   function store() { localStorage.setItem(storageKey(), JSON.stringify(documents)); }
+  function loadCloudHistory() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(historyKey()) || "[]");
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  }
+  function saveCloudHistory(items) {
+    try { localStorage.setItem(historyKey(), JSON.stringify(items.slice(0, 200))); } catch {}
+  }
+  function mergeHistoryIntoLocal(items) {
+    if (!Array.isArray(items) || !items.length) return;
+    let map;
+    try { map = new Map(JSON.parse(localStorage.getItem("play-history") || "[]")); } catch { map = new Map(); }
+    let changed = false;
+    for (const entry of items) {
+      if (!entry || typeof entry.digest !== "string" || typeof entry.title !== "string") continue;
+      let localId = null;
+      if (/^ytmusic:\/\/[\w-]{11}$/.test(entry.digest)) localId = entry.digest;
+      else localId = localStorage.getItem("veluna-file/" + entry.digest) || tracks.find(t => t.title === entry.title)?.id || null;
+      if (!localId) continue;
+      const prev = map.get(localId);
+      const count = Math.max(prev?.count || 0, Number(entry.count) || 1);
+      const time = Math.max(prev?.time || 0, Number(entry.time) || 0);
+      if (!prev || count !== prev.count || time !== prev.time) {
+        map.delete(localId);
+        map.set(localId, { count, time });
+        changed = true;
+      }
+    }
+    if (changed) {
+      try { localStorage.setItem("play-history", JSON.stringify([...map])); } catch {}
+      window.velunaLibrary?.refresh?.();
+    }
+  }
+  function mergeHistoryEntries(a, b) {
+    const byDigest = new Map();
+    for (const item of [...a, ...b]) {
+      if (!item || typeof item.digest !== "string" || !/^(?:[0-9a-f]{64}|ytmusic:\/\/[\w-]{11})$/.test(item.digest)) continue;
+      const prev = byDigest.get(item.digest);
+      if (!prev) {
+        byDigest.set(item.digest, {
+          digest: item.digest,
+          title: String(item.title || "").slice(0, 160),
+          count: Math.max(1, Number(item.count) || 1),
+          time: Math.max(0, Number(item.time) || 0)
+        });
+      } else {
+        byDigest.set(item.digest, {
+          digest: item.digest,
+          title: prev.title || String(item.title || "").slice(0, 160),
+          count: Math.max(prev.count, Number(item.count) || 1),
+          time: Math.max(prev.time, Number(item.time) || 0)
+        });
+      }
+    }
+    return [...byDigest.values()].sort((x, y) => y.time - x.time).slice(0, 200);
+  }
+  async function syncHistory() {
+    if (!owner || navigator.onLine === false || historySyncing) return;
+    historySyncing = true;
+    const run = generation;
+    try {
+      const rows = await request("/rest/v1/veluna_library?kind=eq.history&item_id=eq." + historyId + "&deleted=eq.false&select=revision,payload");
+      if (run !== generation) return;
+      const remoteRow = Array.isArray(rows) ? rows[0] : null;
+      historyRevision = remoteRow?.revision || 0;
+      const remoteItems = Array.isArray(remoteRow?.payload?.items) ? remoteRow.payload.items : [];
+      const localItems = loadCloudHistory();
+      const merged = mergeHistoryEntries(localItems, remoteItems);
+      saveCloudHistory(merged);
+      mergeHistoryIntoLocal(merged);
+      if (historyDirty && merged.length) {
+        const rev = await request("/rest/v1/rpc/veluna_save_item", "POST", {
+          p_kind: "history",
+          p_item_id: historyId,
+          p_expected_revision: historyRevision,
+          p_payload: { items: merged },
+          p_deleted: false
+        });
+        if (run !== generation) return;
+        historyRevision = rev;
+        historyDirty = false;
+      }
+    } catch {}
+    finally {
+      if (run === generation) historySyncing = false;
+    }
+  }
+  async function recordHistory(track) {
+    if (!track || !track.id) return;
+    const run = generation;
+    try {
+      const digest = await inspectTrack(track.id);
+      if (run !== generation || !digest) return;
+      localStorage.setItem("veluna-file/" + digest, track.id);
+      const list = loadCloudHistory();
+      const prev = list.find(i => i.digest === digest);
+      const updated = mergeHistoryEntries(list, [{
+        digest,
+        title: String(track.title || "").slice(0, 160),
+        count: (prev?.count || 0) + 1,
+        time: Date.now()
+      }]);
+      saveCloudHistory(updated);
+      historyDirty = true;
+      if (owner && navigator.onLine !== false && typeof setTimeout === "function") {
+        if (typeof clearTimeout === "function") clearTimeout(historyTimer);
+        historyTimer = setTimeout(() => { syncHistory(); }, 1500);
+      }
+    } catch {}
+  }
   function account(id) {
     if (owner === id) return;
     generation++; owner = id; syncing = again = false; active = favoriteId;
+    historyRevision = 0; historyDirty = false; historySyncing = false;
+    if (typeof clearTimeout === "function") clearTimeout(historyTimer);
     try { documents = JSON.parse(localStorage.getItem(storageKey())) || []; } catch { documents = []; }
     if (!Array.isArray(documents)) documents = [];
     if (!documents.some(d => d.id === favoriteId)) documents.unshift(newList(favoriteId,"Yêu thích","favorite"));
@@ -47,6 +163,7 @@ function playlistLibrary(request) {
     }
     el("playlist-conflict").hidden = !currentDoc?.conflict;
     window.velunaLibrary?.favoritesChanged();
+    if (typeof window.dispatchEvent === "function") window.dispatchEvent(new Event("veluna-playlists-change"));
   }
   function fromServer(row) {
     const p=row.payload;
@@ -150,9 +267,9 @@ function playlistLibrary(request) {
     tell("Đã nhập các bài từ playlist trên máy.");
   };
   panel.addEventListener("toggle",()=>{if(panel.open){render();sync();}});
-  window.addEventListener("online",sync);
+  window.addEventListener("online",()=>{const p=sync();return historyDirty?Promise.all([p,syncHistory()]):p;});
   window.addEventListener("veluna-library",()=>{if(panel.open)render();});
-  document.addEventListener("visibilitychange",()=>{if(!document.hidden && owner)sync();});
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden && owner){sync();if(historyDirty)syncHistory();}});
   window.velunaFavorites = {
     ids() {
       const items=documents.find(doc=>doc.id===favoriteId)?.payload.items || [];
@@ -170,5 +287,26 @@ function playlistLibrary(request) {
       change(doc,exists?items.filter(item=>item.digest!==digest):[...items,{digest,title:track.title.slice(0,160)}]);
     }
   };
-  account(null);return {account};
+  window.velunaPlaylists = {
+    list() {
+      return documents.map(d => ({
+        id: d.id,
+        kind: d.kind,
+        name: d.payload?.name || "Playlist",
+        count: (d.payload?.items || []).length,
+        items: (d.payload?.items || []).slice()
+      }));
+    },
+    playById(id) {
+      if (!documents.some(d => d.id === id)) return;
+      active = id;
+      render();
+      return el("playlist-play").onclick?.();
+    }
+  };
+  window.velunaHistorySync = {
+    record: recordHistory,
+    sync: syncHistory
+  };
+  account(null);return {account,syncHistory};
 }

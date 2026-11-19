@@ -1,33 +1,27 @@
 (() => {
   const rootObj = typeof window !== "undefined" ? window : globalThis;
   const key = "youtube-library";
+  const OFFLINE_KEY = "veluna-offline-index";
   const trackMetaCache = new Map();
   const lyricsInFlight = new Set();
   const lyricsMetaCache = new Map();
+  const offlineCache = new Map();
+  const offlineInFlight = new Set();
   let items = [];
   try {
     const raw = JSON.parse(localStorage.getItem(key) || "[]");
     if (Array.isArray(raw)) items = raw.filter(x => typeof x.title === "string" && /^[\w-]{11}$/.test(x.id));
   } catch {}
+  try {
+    const cachedOffline = JSON.parse(localStorage.getItem(OFFLINE_KEY) || "[]");
+    if (Array.isArray(cachedOffline)) {
+      for (const entry of cachedOffline) {
+        if (entry?.video_id && entry?.audio_path) offlineCache.set(entry.video_id, entry);
+      }
+    }
+  } catch {}
 
-  function videoId(value) {
-    if (typeof value !== "string") return "";
-    if (value.startsWith("ytmusic://")) {
-      const bare = value.slice("ytmusic://".length);
-      return /^[\w-]{11}$/.test(bare) ? bare : "";
-    }
-    if (/^[\w-]{11}$/.test(value.trim())) return value.trim();
-    let url;
-    try { url = new URL(value); } catch { return ""; }
-    if (url.protocol !== "https:" || url.username || url.password || url.port) return "";
-    let id = "";
-    if (url.hostname === "youtu.be") id = url.pathname.slice(1);
-    else if (["youtube.com", "www.youtube.com", "music.youtube.com", "m.youtube.com"].includes(url.hostname)) {
-      if (url.pathname === "/watch") id = url.searchParams.get("v");
-      else if (/^\/(shorts|live)\/[\w-]{11}$/.test(url.pathname)) id = url.pathname.split("/")[2];
-    }
-    return /^[\w-]{11}$/.test(id || "") ? id : "";
-  }
+  const videoId = value => rootObj.velunaUtils.videoId(value);
 
   function formatQuality(track) {
     if (!track) return "";
@@ -40,8 +34,203 @@
   function sourceBadge(track) {
     if (!track) return "";
     const id = String(track.id || track.path || track.uri || "");
+    const vid = videoId(track.video_id || id);
+    if (vid && offlineCache.has(vid)) return "Đã tải về · Offline";
     if (track.source === "ytmusic" || id.startsWith("ytmusic://")) return "YouTube Music";
     return "";
+  }
+
+  function persistOfflineIndex() {
+    try {
+      localStorage.setItem(OFFLINE_KEY, JSON.stringify([...offlineCache.values()]));
+    } catch {}
+  }
+
+  function emitOfflineChange(videoIdChanged) {
+    persistOfflineIndex();
+    if (typeof rootObj.dispatchEvent === "function" && typeof CustomEvent === "function") {
+      rootObj.dispatchEvent(new CustomEvent("veluna-offline-change", { detail: { videoId: videoIdChanged || "" } }));
+    }
+    rootObj.velunaLibrary?.refresh?.();
+    if (typeof draw === "function") draw();
+  }
+
+  function isOffline(idOrVid) {
+    const vid = videoId(String(idOrVid || ""));
+    return Boolean(vid && offlineCache.has(vid));
+  }
+
+  function offlineEntry(idOrVid) {
+    const vid = videoId(String(idOrVid || ""));
+    return vid ? (offlineCache.get(vid) || null) : null;
+  }
+
+  function listOffline() {
+    return [...offlineCache.values()];
+  }
+
+  function offlineCoverSrc(entry) {
+    if (!entry?.cover_path) return "";
+    if (typeof desktop !== "undefined" && desktop?.convertFileSrc) {
+      return desktop.convertFileSrc(entry.cover_path);
+    }
+    return entry.cover_path;
+  }
+
+  function hydrateOfflineEntry(entry) {
+    if (!entry?.video_id || !entry?.audio_path) return null;
+    offlineCache.set(entry.video_id, entry);
+    const id = "ytmusic://" + entry.video_id;
+    const coverSrc = offlineCoverSrc(entry);
+    const prev = trackMetaCache.get(id) || { id, video_id: entry.video_id, source: "ytmusic" };
+    const merged = {
+      ...prev,
+      id,
+      video_id: entry.video_id,
+      source: "ytmusic",
+      offline: true,
+      title: entry.title || prev.title || entry.video_id,
+      artist: entry.artist || prev.artist || "",
+      artist_text: entry.artist || prev.artist_text || "",
+      album: entry.album || prev.album || "",
+      codec: entry.codec || prev.codec,
+      container: entry.container || prev.container,
+      bitrate_kbps: entry.bitrate_kbps || prev.bitrate_kbps,
+      sample_rate: entry.sample_rate || prev.sample_rate,
+      loudness_db: entry.loudness_db ?? prev.loudness_db,
+      duration_sec: entry.duration_sec ?? prev.duration_sec,
+      thumbnail: coverSrc || prev.thumbnail || ""
+    };
+    trackMetaCache.set(id, merged);
+    if (entry.lyrics) {
+      try { localStorage.setItem("lyrics/" + id, entry.lyrics); } catch {}
+    }
+    if (typeof tracks !== "undefined" && Array.isArray(tracks)) {
+      const target = tracks.find(x => x.id === id);
+      if (target) Object.assign(target, merged);
+    }
+    return entry;
+  }
+
+  function offlineStreamInfo(vid) {
+    const entry = offlineCache.get(vid);
+    if (!entry?.audio_path) return null;
+    const url = typeof desktop !== "undefined" && desktop?.convertFileSrc
+      ? desktop.convertFileSrc(entry.audio_path)
+      : entry.audio_path;
+    return {
+      video_id: vid,
+      url,
+      offline: true,
+      codec: entry.codec || "opus",
+      container: entry.container || "webm",
+      bitrate: (entry.bitrate_kbps || 0) * 1000,
+      bitrate_kbps: entry.bitrate_kbps || 0,
+      sample_rate: entry.sample_rate || 48000,
+      loudness_db: entry.loudness_db ?? null,
+      duration_ms: entry.duration_sec ? entry.duration_sec * 1000 : null,
+      expires_at: Number.MAX_SAFE_INTEGER,
+      title: entry.title || vid,
+      author: entry.artist || ""
+    };
+  }
+
+  async function loadOfflineIndex() {
+    try {
+      const list = await invokeYtm("offlineList", "offline_list", {});
+      if (Array.isArray(list)) {
+        offlineCache.clear();
+        for (const entry of list) hydrateOfflineEntry(entry);
+        emitOfflineChange("");
+      }
+      return listOffline();
+    } catch {
+      return listOffline();
+    }
+  }
+
+  async function downloadTrack(trackOrId) {
+    const base = typeof trackOrId === "string"
+      ? ((typeof tracks !== "undefined" && Array.isArray(tracks) ? tracks.find(t => t.id === trackOrId) : null) || trackMetaCache.get(trackOrId) || { id: trackOrId })
+      : (trackOrId || {});
+    const vid = videoId(base.video_id || base.id || base.uri || "");
+    if (!vid) throw Error("Chỉ hỗ trợ tải ngoại tuyến cho bài nhạc trực tuyến.");
+    if (offlineInFlight.has(vid)) return offlineCache.get(vid) || null;
+    offlineInFlight.add(vid);
+    const id = "ytmusic://" + vid;
+    const cached = trackMetaCache.get(id) || {};
+    const title = base.title || cached.title || vid;
+    const artist = base.artist || base.artist_text || cached.artist || "";
+    const albumName = typeof base.album === "object" && base.album ? (base.album.name || "") : (base.album || cached.album || "");
+    const thumbnail = base.thumbnail || cached.thumbnail || (Array.isArray(base.thumbnails) ? base.thumbnails[base.thumbnails.length - 1] : "") || "";
+    let savedLyrics = "";
+    try { savedLyrics = localStorage.getItem("lyrics/" + id) || ""; } catch {}
+    const payload = {
+      video_id: vid,
+      title,
+      artist,
+      album: albumName,
+      thumbnail: thumbnail || null,
+      lyrics: savedLyrics || null
+    };
+    if (typeof msg === "function") msg("Đang tải \"" + title + "\" để nghe ngoại tuyến…");
+    try {
+      const entry = await invokeYtm(
+        "offlineDownload",
+        "offline_download",
+        {
+          videoId: vid,
+          title,
+          artist,
+          album: albumName,
+          thumbnail: thumbnail || null,
+          lyrics: savedLyrics || null
+        },
+        JSON.stringify(payload)
+      );
+      hydrateOfflineEntry(entry);
+      if (typeof tracks !== "undefined" && Array.isArray(tracks) && !tracks.some(x => x.id === id)) {
+        await playTracks([{ ...base, id, video_id: vid, title, artist, album: albumName, thumbnail }], 0, false);
+      }
+      emitOfflineChange(vid);
+      if (typeof msg === "function") msg("Đã tải về \"" + title + "\" để nghe ngoại tuyến.");
+      return entry;
+    } finally {
+      offlineInFlight.delete(vid);
+    }
+  }
+
+  async function downloadPlaylist(list) {
+    const targets = (list || []).map(normalizeYtmTrack).filter(t => t.video_id && !offlineCache.has(t.video_id));
+    if (!targets.length) {
+      if (typeof msg === "function") msg("Tất cả bài trong danh sách đã được tải về.");
+      return 0;
+    }
+    let okCount = 0;
+    for (const track of targets) {
+      try {
+        await downloadTrack(track);
+        okCount++;
+      } catch {}
+    }
+    if (typeof msg === "function") msg("Đã tải ngoại tuyến " + okCount + "/" + targets.length + " bài.");
+    return okCount;
+  }
+
+  async function deleteOffline(idOrVid) {
+    const vid = videoId(String(idOrVid || ""));
+    if (!vid) return false;
+    await invokeYtm("offlineDelete", "offline_delete", { videoId: vid }, vid);
+    offlineCache.delete(vid);
+    const id = "ytmusic://" + vid;
+    const prev = trackMetaCache.get(id);
+    if (prev) {
+      delete prev.offline;
+      trackMetaCache.set(id, prev);
+    }
+    emitOfflineChange(vid);
+    if (typeof msg === "function") msg("Đã xóa bản tải về khỏi bộ nhớ đệm.");
+    return true;
   }
 
   function normalizeYtmTrack(t) {
@@ -71,26 +260,29 @@
   }
 
   function invokeYtm(nativeMethod, tauriCommand, desktopArgs, ...nativeArgs) {
-    if (typeof native !== "undefined" && native && typeof native[nativeMethod] === "function") {
-      if (typeof nativeTransfer === "function") return nativeTransfer(nativeMethod, ...nativeArgs);
-      const raw = native[nativeMethod](...nativeArgs);
-      const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
-      if (parsed?.error) throw Error(parsed.error);
-      return Promise.resolve(parsed);
-    }
-    if (typeof desktop !== "undefined" && desktop && typeof desktop.invoke === "function") {
-      return desktop.invoke(tauriCommand, desktopArgs);
-    }
-    return Promise.reject(Error("YouTube Music backend chưa sẵn sàng trên thiết bị này."));
+    return rootObj.velunaUtils.callBridge({
+      nativeMethod,
+      tauriCommand,
+      desktopArgs,
+      nativeArgs,
+      fallbackError: "YouTube Music backend chưa sẵn sàng trên thiết bị này."
+    });
   }
 
   async function search(query, filter = "all") {
     const q = String(query || "").trim();
-    if (!q) return { query: "", tracks: [], videos: [], albums: [], artists: [] };
-    const res = await invokeYtm("ytmSearch", "ytm_search", { query: q, filter }, q, filter);
+    if (!q) return { query: "", tracks: [], videos: [], albums: [], playlists: [], artists: [] };
+    const res = await invokeYtm("ytmSearch", "ytmusic_search", { query: q, filter }, q, filter);
     for (const t of res?.tracks || []) normalizeYtmTrack(t);
     for (const v of res?.videos || []) normalizeYtmTrack(v);
-    return res;
+    return {
+      query: res?.query || q,
+      tracks: Array.isArray(res?.tracks) ? res.tracks : [],
+      videos: Array.isArray(res?.videos) ? res.videos : [],
+      albums: Array.isArray(res?.albums) ? res.albums : [],
+      playlists: Array.isArray(res?.playlists) ? res.playlists : [],
+      artists: Array.isArray(res?.artists) ? res.artists : []
+    };
   }
 
   async function home(params = "", continuation = "") {
@@ -128,21 +320,31 @@
   async function stream(vidOrUri, forceRefresh = false) {
     const vid = videoId(vidOrUri);
     if (!vid) throw Error("Mã video không hợp lệ.");
-    const info = await invokeYtm(
-      "ytmStream",
-      "ytm_stream",
-      { videoId: vid, forceRefresh: !!forceRefresh },
-      vid,
-      !!forceRefresh
-    );
-    return rememberStream(vid, info);
+    if (!forceRefresh) {
+      const local = offlineStreamInfo(vid);
+      if (local) return rememberStream(vid, local);
+    }
+    try {
+      const info = await invokeYtm(
+        "ytmStream",
+        "ytm_stream",
+        { videoId: vid, forceRefresh: !!forceRefresh },
+        vid,
+        !!forceRefresh
+      );
+      return rememberStream(vid, info);
+    } catch (err) {
+      const fallback = offlineStreamInfo(vid);
+      if (fallback) return rememberStream(vid, fallback);
+      throw err;
+    }
   }
 
   function rememberStream(vid, info) {
     const id = "ytmusic://" + vid;
     const prev = trackMetaCache.get(id) || {id, video_id:vid, source:"ytmusic"};
-    const {codec, container, bitrate, bitrate_kbps, sample_rate, expires_at} = info;
-    const meta = {...prev, codec, container, bitrate, bitrate_kbps, sample_rate, expires_at,
+    const {codec, container, bitrate, bitrate_kbps, sample_rate, loudness_db, expires_at} = info;
+    const meta = {...prev, codec, container, bitrate, bitrate_kbps, sample_rate, loudness_db, expires_at,
       title:prev.title || info.title || vid, artist:prev.artist || info.author || ""};
     trackMetaCache.set(id, meta);
     if (typeof tracks !== "undefined") {
@@ -150,6 +352,7 @@
       if (target) Object.assign(target, meta);
       rootObj.velunaLibrary?.refresh?.();
     }
+    rootObj.velunaEQ?.updateTrackLoudness?.(id, loudness_db);
     return info;
   }
 
@@ -335,6 +538,21 @@
         }
       };
 
+      const downloadAll = document.createElement("button");
+      downloadAll.type = "button";
+      downloadAll.textContent = "Tải xuống playlist";
+      downloadAll.disabled = !list.length;
+      downloadAll.onclick = async () => {
+        downloadAll.disabled = true;
+        downloadAll.textContent = "Đang tải…";
+        try {
+          await downloadPlaylist(list);
+        } finally {
+          downloadAll.disabled = false;
+          downloadAll.textContent = "Tải xuống playlist";
+        }
+      };
+
       const dismiss = document.createElement("button");
       dismiss.type = "button";
       dismiss.textContent = "Đóng";
@@ -342,7 +560,7 @@
         panel.hidden = true;
         panel.replaceChildren();
       };
-      actions.append(playAll, queueAll, dismiss);
+      actions.append(playAll, queueAll, downloadAll, dismiss);
       loadedHead.append(art, meta, actions);
       panel.append(loadedHead);
 
@@ -386,6 +604,28 @@
       el("ytm-status").textContent = "Đã thêm \"" + norm.title + "\" vào thư viện.";
     };
     wrap.append(addBtn);
+
+    const dlBtn = document.createElement("button");
+    dlBtn.type = "button";
+    const syncDlBtn = () => {
+      const cached = isOffline(norm.video_id);
+      dlBtn.textContent = cached ? "Xóa tải về" : "Tải về";
+      dlBtn.setAttribute("aria-label", (cached ? "Xóa bản tải về: " : "Tải xuống ngoại tuyến: ") + norm.title);
+    };
+    syncDlBtn();
+    dlBtn.onclick = async () => {
+      dlBtn.disabled = true;
+      try {
+        if (isOffline(norm.video_id)) await deleteOffline(norm.video_id);
+        else await downloadTrack(norm);
+      } catch (e) {
+        if (typeof msg === "function") msg(e?.message || String(e));
+      } finally {
+        dlBtn.disabled = false;
+        syncDlBtn();
+      }
+    };
+    wrap.append(dlBtn);
 
     if (norm.album_id) {
       const albBtn = document.createElement("button");
@@ -431,6 +671,20 @@
         btn.className = "row";
         btn.textContent = alb.title + (alb.year ? " (" + alb.year + ")" : "");
         btn.onclick = () => openAlbumDetail(alb.browse_id);
+        container.append(btn);
+      }
+    }
+    if ((res?.playlists || []).length) {
+      count += res.playlists.length;
+      const h = document.createElement("h3");
+      h.textContent = "Playlist";
+      container.append(h);
+      for (const pl of res.playlists) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "row";
+        btn.textContent = [pl.title, pl.author, pl.track_count_text].filter(Boolean).join(" · ");
+        btn.onclick = () => openAlbumDetail(pl.browse_id);
         container.append(btn);
       }
     }
@@ -601,6 +855,13 @@
     ensureLyrics,
     playTracks,
     enqueueTracks,
+    loadOfflineIndex,
+    isOffline,
+    offlineEntry,
+    listOffline,
+    downloadTrack,
+    downloadPlaylist,
+    deleteOffline,
     openAlbumDetail,
     openArtistDetail,
     openHomeCollection,

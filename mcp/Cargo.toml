@@ -1,0 +1,17 @@
+[package]
+name = "veluna-mcp"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+
+[[bin]]
+name = "veluna-mcp"
+path = "src/main.rs"
+
+[dependencies]
+veluna-core = { path = "../core" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+getrandom = "0.3"

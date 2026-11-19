@@ -1,5 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod discord_rpc;
 mod nearby;
+mod offline;
+mod smtc;
 mod stream_server;
 mod vault;
 mod ytmusic;
@@ -100,6 +103,13 @@ async fn save_online_tracks(app: tauri::AppHandle, items: Vec<Track>) -> Result<
 
 fn library_file(app: &tauri::AppHandle, id: &str) -> Result<std::fs::File, String> {
     let path = std::path::Path::new(id);
+    if id.contains('\0')
+        || path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err("Invalid track path".into());
+    }
     if !local_paths(app)?.iter().any(|p| p == path) {
         return Err("Track is missing from this library".into());
     }
@@ -211,11 +221,11 @@ struct Asset {
     size: u64,
 }
 async fn update() -> Result<Option<(String, Asset)>, String> {
-    let http = reqwest::Client::builder()
-        .user_agent("VelunaMusic")
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let http = veluna_core::http::build_client(
+        std::time::Duration::from_secs(15),
+        Some("VelunaMusic"),
+    )
+    .map_err(|e| e.to_string())?;
     let res = http
         .get("https://api.github.com/repos/siloneedsleep/VelunaMusic/releases/latest")
         .send()
@@ -236,13 +246,16 @@ async fn update() -> Result<Option<(String, Asset)>, String> {
     {
         return Ok(None);
     }
-    let url = format!("{REPO}/releases/download/{}/{INSTALLER}", release.tag_name);
+    let versioned_name = format!("VelunaMusic-{}-windows-x64.exe", release.tag_name);
+    let versioned_url = format!("{REPO}/releases/download/{}/{versioned_name}", release.tag_name);
+    let legacy_url = format!("{REPO}/releases/download/{}/{INSTALLER}", release.tag_name);
     let asset = release
         .assets
         .into_iter()
         .find(|a| {
-            a.name == INSTALLER
-                && a.browser_download_url == url
+            let valid_pair = (a.name == versioned_name && a.browser_download_url == versioned_url)
+                || (a.name == INSTALLER && a.browser_download_url == legacy_url);
+            valid_pair
                 && a.digest
                     .as_ref()
                     .is_some_and(|d| d.starts_with("sha256:") && d.len() == 71)
@@ -269,9 +282,7 @@ async fn install_update(app: tauri::AppHandle, version: String) -> Result<(), St
         .join("updates");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let file = dir.join(format!("VelunaMusic-{tag}.exe"));
-    let mut res = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(180))
-        .build()
+    let mut res = veluna_core::http::build_client(std::time::Duration::from_secs(180), None)
         .map_err(|e| e.to_string())?
         .get(&asset.browser_download_url)
         .send()
@@ -397,6 +408,8 @@ fn main() {
     tauri::Builder::default()
         .manage(nearby::Nearby::default())
         .manage(PlayerWindow::default())
+        .manage(smtc::SmtcState::default())
+        .manage(discord_rpc::DiscordRpc::default())
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
@@ -442,11 +455,16 @@ fn main() {
                     let _ = win.eval("window.dispatchEvent(new Event('spotify-return'))");
                 }
             });
+            if let Some(win) = app.get_webview_window("main") {
+                let smtc_state = app.state::<smtc::SmtcState>();
+                let _ = smtc_state.attach(app.handle(), &win);
+            }
             Ok(())
         })
         .invoke_handler({
             let commands: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
                 ytmusic::ytmusic_home,
+                ytmusic::ytmusic_search,
                 ytmusic::ytm_search,
                 ytmusic::ytm_album,
                 ytmusic::ytm_artist,
@@ -460,6 +478,7 @@ fn main() {
                 track_digest,
                 nearby::nearby_interfaces,
                 nearby::nearby_start,
+                nearby::nearby_status,
                 nearby::nearby_stop,
                 nearby::nearby_decide,
                 nearby::nearby_forget,
@@ -472,6 +491,13 @@ fn main() {
                 media_tags,
                 vault::read_secret,
                 vault::write_secret,
+                smtc::smtc_update,
+                discord_rpc::discord_rpc_set_enabled,
+                discord_rpc::discord_rpc_update,
+                offline::offline_list,
+                offline::offline_download,
+                offline::offline_delete,
+                offline::offline_resolve,
                 check_update,
                 install_update
             ];

@@ -30,6 +30,14 @@ pub async fn ytm_search(query: String, filter: Option<String>) -> Result<SearchR
 }
 
 #[tauri::command]
+pub async fn ytmusic_search(
+    query: String,
+    filter: Option<String>,
+) -> Result<SearchResponse, String> {
+    ytm_search(query, filter).await
+}
+
+#[tauri::command]
 pub async fn ytm_album(browse_id: String) -> Result<AlbumDetail, String> {
     shared_service()
         .get_album(&browse_id)

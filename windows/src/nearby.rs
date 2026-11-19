@@ -47,6 +47,12 @@ pub struct Invitation {
     qr: Vec<Vec<bool>>,
     address: String,
 }
+#[derive(Serialize)]
+pub struct NearbyStatus {
+    pub active: bool,
+    pub address: String,
+    pub peers: Vec<String>,
+}
 #[derive(Deserialize)]
 struct Header {
     kind: String,
@@ -517,6 +523,32 @@ pub fn nearby_decide(state: tauri::State<Nearby>, id: String, accept: bool) -> R
     }
     Ok(())
 }
+#[tauri::command]
+pub fn nearby_status(app: AppHandle, state: tauri::State<Nearby>) -> Result<NearbyStatus, String> {
+    let slot = state.0.lock().map_err(err)?;
+    if let Some(r) = slot.as_ref() {
+        let peers: Vec<String> = r.peers.lock().map_err(err)?.values().cloned().collect();
+        return Ok(NearbyStatus {
+            active: true,
+            address: r.address.to_string(),
+            peers,
+        });
+    }
+    let path = state_path(&app)?;
+    let peers: Vec<String> = if path.exists() {
+        serde_json::from_slice::<HashMap<String, String>>(&fs::read(path).map_err(err)?)
+            .map(|m| m.into_values().collect())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    Ok(NearbyStatus {
+        active: false,
+        address: String::new(),
+        peers,
+    })
+}
+
 #[tauri::command]
 pub fn nearby_stop(state: tauri::State<Nearby>) -> Result<(), String> {
     if let Some(r) = state.0.lock().map_err(err)?.take() {

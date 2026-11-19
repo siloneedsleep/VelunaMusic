@@ -232,7 +232,16 @@ final class NativeHandoff implements AutoCloseable {
   }
   private boolean start(MediaItem item, JSONObject row, int turn) throws Exception {
     Player player = onPlayer(turn, session::getPlayer);
-    return awaitReady(player, item, row.getLong("position_ms"), row.getBoolean("playing"), turn);
+    long basePos = Math.max(0L, row.getLong("position_ms"));
+    boolean play = row.getBoolean("playing");
+    long compensated = basePos;
+    if (play && row.has("updated_at") && !row.isNull("updated_at")) {
+      try {
+        long delta = System.currentTimeMillis() - Instant.parse(row.getString("updated_at")).toEpochMilli();
+        if (delta > 0 && delta <= 15_000L) compensated += delta;
+      } catch (Exception ignored) { }
+    }
+    return awaitReady(player, item, compensated, play, turn);
   }
   private boolean awaitReady(Player player, MediaItem item, long position, boolean play, int turn)
       throws Exception {

@@ -60,5 +60,5 @@ function remoteMailbox({request,owner,device,status,execute,canReceive=()=>true,
       });
     return running;
   }
-  return {enqueue,sync,reset(){cancel();epoch++;running=null;again=false;},discard(id){change(id,()=>[]);}};
+  return {enqueue,sync,reset(){cancel();epoch++;running=null;again=false;},discard(id){change(id,()=>[]);},pendingCount:()=>pending().length};
 }

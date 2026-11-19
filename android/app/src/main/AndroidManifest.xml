@@ -16,7 +16,6 @@
                 <data android:scheme="velunamusic" android:host="spotify" android:path="/callback"/>
             </intent-filter>
         </activity>
-        <activity android:name=".YouTubeActivity" android:exported="false"/>
         <receiver android:name=".PlayerWidget" android:label="VelunaMusic" android:exported="false">
             <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/player_widget"/>

@@ -163,6 +163,13 @@ test("site CNAME, HTML structure, CSP compliance, and CSS tokens", () => {
       assert.equal(body.trim(), "");
     }
   }
+  for (const doc of ["README.md", "README.vi.md"]) {
+    const content = readUtf8(doc);
+    assert.match(content, /SignPath\.io/i);
+    assert.match(content, /SignPath Foundation/i);
+    assert.match(content, /\/privacy/);
+    assert.match(content, /\/terms/);
+  }
 
   const privacyHtml = readUtf8("site/privacy.html");
   assert.match(privacyHtml, /Windows Credential Manager/);

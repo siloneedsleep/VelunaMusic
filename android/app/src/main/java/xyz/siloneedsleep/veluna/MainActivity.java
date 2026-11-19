@@ -12,6 +12,10 @@ import android.webkit.*;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.media3.common.*;
 import androidx.media3.session.*;
 import com.google.common.util.concurrent.ListenableFuture;
@@ -47,6 +51,14 @@ public final class MainActivity extends Activity {
     private boolean visible;
     private volatile int streamVolume=100;
     private volatile String spotifyReturn = "";
+    private int safeTopDp = 0, safeBottomDp = 0;
+
+    private void pushSafeInsets() {
+        if (web == null || isDestroyed()) return;
+        String js = "document.documentElement.style.setProperty('--safe-top','" + safeTopDp + "px');"
+            + "document.documentElement.style.setProperty('--safe-bottom','" + safeBottomDp + "px');";
+        web.evaluateJavascript(js, null);
+    }
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (!visible || controller == null || !controller.isPlaying()) return;
@@ -57,6 +69,9 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        getWindow().setStatusBarColor(0x00000000);
+        getWindow().setNavigationBarColor(0x00000000);
         acceptSpotifyIntent(getIntent());
         readLibrary();
         secrets = new SecretStore(this);
@@ -75,11 +90,11 @@ public final class MainActivity extends Activity {
                 if ("https".equals(uri.getScheme()) && WebViewAssetLoader.DEFAULT_DOMAIN.equals(uri.getHost()))
                     return local.shouldInterceptRequest(uri);
                 if (!request.isForMainFrame() && "https".equals(uri.getScheme()) && java.util.Arrays.asList(
-                    "vkzrgfiopdnujookplbv.supabase.co","api.openai.com","openrouter.ai","accounts.spotify.com","api.spotify.com",
+                    "api.github.com","vkzrgfiopdnujookplbv.supabase.co","api.openai.com","openrouter.ai","accounts.spotify.com","api.spotify.com",
                     "lh3.googleusercontent.com","i.ytimg.com","yt3.ggpht.com","yt3.googleusercontent.com").contains(uri.getHost())) return null;
                 return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
             }
-            @Override public void onPageFinished(WebView view, String url) { publish(); }
+            @Override public void onPageFinished(WebView view, String url) { pushSafeInsets(); publish(); }
         });
         web.setWebChromeClient(new WebChromeClient() {
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> reply, FileChooserParams params) {
@@ -93,6 +108,14 @@ public final class MainActivity extends Activity {
         web.addJavascriptInterface(new Bridge(), "VelunaAndroid");
         web.loadUrl("https://appassets.androidplatform.net/assets/index.html");
         setContentView(web);
+        ViewCompat.setOnApplyWindowInsetsListener(web, (v, insets) -> {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            float density = Math.max(1f, getResources().getDisplayMetrics().density);
+            safeTopDp = Math.round(bars.top / density);
+            safeBottomDp = Math.round(bars.bottom / density);
+            pushSafeInsets();
+            return insets;
+        });
         SessionToken token = new SessionToken(this, new ComponentName(this, PlaybackService.class));
         connection = new MediaController.Builder(this, token).buildAsync();
         connection.addListener(() -> {
@@ -101,6 +124,10 @@ public final class MainActivity extends Activity {
                 controller = connection.get();
                 controller.addListener(new Player.Listener() {
                     @Override public void onEvents(Player p, Player.Events events) { publish(); }
+                    @Override public void onMediaItemTransition(MediaItem mediaItem, int reason) {
+                        publish();
+                        call("onVelunaTrackTransition", mediaItem == null ? "" : mediaItem.mediaId, reason);
+                    }
                     @Override public void onPlayerError(PlaybackException e) {
                         MediaItem cur = controller == null ? null : controller.getCurrentMediaItem();
                         String vid = cur == null ? null : PlaybackService.extractYtmVideoId(
@@ -368,8 +395,30 @@ public final class MainActivity extends Activity {
             if(Math.abs((long)bass)>6 || Math.abs((long)mid)>6 || Math.abs((long)high)>6)return;
             runOnUiThread(()->{
                 android.content.SharedPreferences prefs=getSharedPreferences("sound",0);
-                prefs.edit().putBoolean("enabled",enabled).putInt("bass",bass).putInt("mid",mid).putInt("high",high).apply();
+                JSONArray bands=new JSONArray();
+                for(int v:new int[]{bass,bass,bass,mid,mid,mid,mid,high,high,high})bands.put(v);
+                prefs.edit().putBoolean("enabled",enabled).putInt("bass",bass).putInt("mid",mid).putInt("high",high)
+                    .putString("bands10",bands.toString()).apply();
                 call("onVelunaSoundStatus",enabled?prefs.getString("result","EQ sẽ áp dụng khi bắt đầu phát."):"Đã tắt EQ.");
+            });
+        }
+        @JavascriptInterface public void setEqualizer10(boolean enabled,String bandsJson,boolean normalize,int targetGainMb){
+            runOnUiThread(()->{
+                try{
+                    JSONArray parsed=new JSONArray(bandsJson);
+                    if(parsed.length()!=10)return;
+                    JSONArray clean=new JSONArray();
+                    for(int i=0;i<10;i++){
+                        double v=parsed.optDouble(i,0.0);
+                        if(!Double.isFinite(v))v=0.0;
+                        clean.put(Math.max(-12.0,Math.min(12.0,v)));
+                    }
+                    int clampedGain=Math.max(-600,Math.min(600,targetGainMb));
+                    android.content.SharedPreferences prefs=getSharedPreferences("sound",0);
+                    prefs.edit().putBoolean("enabled",enabled).putString("bands10",clean.toString())
+                        .putBoolean("normalize",normalize).putInt("normalizeGainMb",clampedGain).apply();
+                    call("onVelunaSoundStatus",enabled || normalize ? prefs.getString("result","EQ 10 dải tần đang áp dụng.") : "Đã tắt EQ và chuẩn hóa âm lượng.");
+                }catch(Exception ignored){}
             });
         }
         @JavascriptInterface public int playerVolume(){return streamVolume;}
@@ -384,6 +433,14 @@ public final class MainActivity extends Activity {
             if(mode<0 || mode>2)return;
             getSharedPreferences("player",0).edit().putInt("repeat",mode).apply();
             runOnUiThread(()->{if(controller!=null)controller.setRepeatMode(mode);});
+        }
+        @JavascriptInterface public void setShuffle(boolean enabled) {
+            getSharedPreferences("player",0).edit().putBoolean("shuffle",enabled).apply();
+            runOnUiThread(()->{if(controller!=null)controller.setShuffleModeEnabled(enabled);});
+        }
+        @JavascriptInterface public String deviceName() {
+            String m = Build.MODEL;
+            return (m == null || m.trim().isEmpty()) ? "Android" : m.trim();
         }
         @JavascriptInterface public void sleepUntil(long time) {
             long now=System.currentTimeMillis();
@@ -494,6 +551,29 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void ytmLyrics(String ticket, String videoId, String title, String artist, long durationSec) {
             runYtmTask(ticket, () -> MainActivity.ytmLyrics(videoId, title, artist, durationSec));
         }
+        @JavascriptInterface public void offlineList(String ticket) {
+            network.execute(() -> {
+                JSONArray items = OfflineStore.list(MainActivity.this);
+                runOnUiThread(() -> call("onVelunaTransferReply", ticket, items, ""));
+            });
+        }
+        @JavascriptInterface public void offlineDownload(String ticket, String metaJson) {
+            network.execute(() -> {
+                try {
+                    JSONObject entry = OfflineStore.download(MainActivity.this, new JSONObject(metaJson));
+                    runOnUiThread(() -> call("onVelunaTransferReply", ticket, entry, ""));
+                } catch (Exception e) {
+                    String msgText = e.getMessage() == null ? "Không tải được bài hát ngoại tuyến." : e.getMessage();
+                    runOnUiThread(() -> call("onVelunaTransferReply", ticket, "", msgText));
+                }
+            });
+        }
+        @JavascriptInterface public void offlineDelete(String ticket, String videoId) {
+            network.execute(() -> {
+                boolean removed = OfflineStore.delete(MainActivity.this, videoId);
+                runOnUiThread(() -> call("onVelunaTransferReply", ticket, removed, ""));
+            });
+        }
         @JavascriptInterface public void ytmAddOrPlay(String tracksJson, int startIndex, boolean playNow) {
             runOnUiThread(() -> {
                 try {
@@ -525,8 +605,13 @@ public final class MainActivity extends Activity {
         }
         @JavascriptInterface public void pickAlbum() { runOnUiThread(()->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),13)); }
         @JavascriptInterface public void setMix(boolean enabled, String from, String to, int ms, int fixedSeconds) {
+            setMixPlan(enabled, from, to, ms, fixedSeconds, 0L);
+        }
+        @JavascriptInterface public void setMixPlan(boolean enabled, String from, String to, int ms, int fixedSeconds, long cueInMs) {
             getSharedPreferences("dj", 0).edit().putBoolean("enabled",enabled)
-                .putString("from",from).putString("to",to).putInt("fixed", Math.max(0,Math.min(30,fixedSeconds))).putLong("width",Math.max(0,Math.min(30000,ms))).apply();
+                .putString("from",from).putString("to",to).putInt("fixed", Math.max(0,Math.min(30,fixedSeconds)))
+                .putLong("width",Math.max(0,Math.min(30000,ms)))
+                .putLong("cueInMs",Math.max(0L,Math.min(4000L,cueInMs))).apply();
         }
         @JavascriptInterface public String playHistory() {
             return getSharedPreferences("player",0).getString("play-history","{}");

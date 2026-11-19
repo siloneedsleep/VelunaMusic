@@ -75,3 +75,64 @@ test("Liquid Glass supports 4 presets, reduced motion toggle, dynamic cover togg
   listeners.visibilitychange();
   assert.equal(body.dataset.windowState, "hidden");
 });
+
+test("Connect sheet, Spotify Desktop High-Density Dark Glass, and mobile layout markup and CSS tokens are present", async () => {
+  const html = await readFile(new URL("../ui/index.html", import.meta.url), "utf8");
+  const css = await readFile(new URL("../ui/theme.css", import.meta.url), "utf8");
+  const playerCss = await readFile(new URL("../ui/player.css", import.meta.url), "utf8");
+
+  assert.match(html, /viewport-fit=cover/);
+  assert.match(html, /<dialog id="connect-dialog"[^>]*closedby="any"/);
+  assert.match(html, /<header class="app-topbar">[\s\S]*id="query"[\s\S]*<\/header>/);
+  assert.match(html, /<dialog id="prefs"[\s\S]*id="motion-toggle"[\s\S]*<\/dialog>/);
+  assert.match(html, /<details id="lyrics-panel" class="listening" open>/);
+  for (const id of [
+    "nav-back",
+    "nav-forward",
+    "connect-open",
+    "topbar-eq",
+    "now-panel-toggle",
+    "now-panel-close",
+    "account-avatar-label",
+    "mobile-more",
+    "mobile-bottom-nav",
+    "mini-connect",
+    "mini-progress-fill",
+    "now-shuffle",
+    "now-repeat",
+    "now-device-pill",
+    "now-sheet-close",
+    "now-up-next",
+    "now-up-next-list",
+    "now-up-next-all",
+    "home-quick-grid",
+    "library-filter-bar",
+    "library-layout-toggle"
+  ]) {
+    assert.ok(html.includes('id="' + id + '"'), "Missing element id=" + id + " in ui/index.html");
+  }
+
+  assert.match(playerCss, /--bg-canvas:#070a10/);
+  assert.match(playerCss, /--bg-rail:#090d16/);
+  assert.match(playerCss, /--bg-surface:#0e1422/);
+  assert.match(playerCss, /rgba\(255,255,255,\.06\)/);
+  assert.match(playerCss, /text-wrap:balance/);
+  assert.match(css, /@media\(min-width:769px\)\{[\s\S]*body:not\(\.platform-android\) #mini-bar\{display:none!important\}/);
+  assert.match(css, /grid-template-columns:220px minmax\(0,1fr\) 300px/);
+  assert.match(css, /scrollbar-color:var\(--scrollbar-thumb\) var\(--scrollbar-track\)/);
+  assert.match(css, /@supports not \(scrollbar-color:auto\)/);
+  assert.match(css, /\.card-play-fab\{/);
+  assert.match(css, /\.album-card:focus-within \.card-play-fab/);
+  assert.match(css, /scroll-padding-bottom:calc\(136px \+ var\(--safe-bottom-inset\)\)/);
+  assert.match(css, /\.up-next-card\{/);
+  assert.match(playerCss, /--surface-canvas:var\(--bg-canvas\)/);
+  assert.match(playerCss, /--glass-sheet-bg:/);
+  assert.match(playerCss, /--radius-sheet:20px/);
+  assert.match(css, /\.connect-sheet(?:,\.eq-sheet)?\{[^}]*transition-property:opacity,transform,display,overlay/);
+  assert.match(css, /transition-behavior:allow-discrete/);
+  assert.match(css, /@starting-style\{/);
+  assert.match(css, /@media\(max-width:768px\)/);
+  assert.match(css, /body\.platform-android\b/);
+  assert.match(css, /--safe-top-inset/);
+  assert.match(css, /--safe-bottom-inset/);
+});

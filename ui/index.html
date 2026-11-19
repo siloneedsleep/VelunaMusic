@@ -2,13 +2,14 @@
 <html lang="vi">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#07172e">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://lh3.googleusercontent.com https://i.ytimg.com https://yt3.ggpht.com https://yt3.googleusercontent.com; media-src 'self' asset: http://asset.localhost http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost https://vkzrgfiopdnujookplbv.supabase.co wss://vkzrgfiopdnujookplbv.supabase.co https://api.openai.com https://openrouter.ai https://accounts.spotify.com https://api.spotify.com; frame-src 'none'; object-src 'none'; base-uri 'none'">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#070a10">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://lh3.googleusercontent.com https://i.ytimg.com https://yt3.ggpht.com https://yt3.googleusercontent.com; media-src 'self' asset: http://asset.localhost http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost https://api.github.com https://vkzrgfiopdnujookplbv.supabase.co wss://vkzrgfiopdnujookplbv.supabase.co https://api.openai.com https://openrouter.ai https://accounts.spotify.com https://api.spotify.com; frame-src 'none'; object-src 'none'; base-uri 'none'">
   <title>VelunaMusic</title>
   <link rel="stylesheet" href="player.css">
   <link rel="stylesheet" href="theme.css">
   <link rel="stylesheet" href="library.css">
+  <script src="utils.js" defer></script>
   <script src="lrc.js" defer></script>
   <script src="player.js" defer></script>
   <script src="cloud-config.js" defer></script>
@@ -22,37 +23,121 @@
   <script src="playlists.js" defer></script>
   <script src="library.js" defer></script>
   <script src="listening.js" defer></script>
+  <script src="eq.js" defer></script>
   <script src="sound.js" defer></script>
   <script src="remote-mailbox.js" defer></script>
   <script src="remote.js" defer></script>
   <script src="account.js" defer></script>
 </head>
-<body>
-  <header>
-    <div class="brand"><img src="icon.png" width="36" height="36" alt="">VelunaMusic</div>
-    <nav><button id="motion-toggle" type="button" aria-pressed="false">Giảm chuyển động</button> <button id="nearby">Thiết bị gần</button> <button id="dj">DJ</button> <button id="account">Tài khoản</button> <button id="settings">Cài đặt</button></nav>
+<body data-app-version="0.1.0">
+  <header class="app-topbar">
+    <div class="topbar-left">
+      <div class="brand"><img src="icon.png" width="28" height="28" alt=""><span>VelunaMusic</span></div>
+      <div class="history-nav" aria-label="Lịch sử điều hướng">
+        <button id="nav-back" type="button" class="icon-circle-btn" aria-label="Quay lại" disabled><i class="glyph" style="--glyph:url(simpmusic/chevron-left.svg)" aria-hidden="true"></i></button>
+        <button id="nav-forward" type="button" class="icon-circle-btn" aria-label="Đi tiếp" disabled><i class="glyph" style="--glyph:url(simpmusic/chevron-right.svg)" aria-hidden="true"></i></button>
+      </div>
+    </div>
+    <div class="topbar-search">
+      <div class="unified-search-bar">
+        <i class="glyph search-pill-icon" style="--glyph:url(simpmusic/search.svg)" aria-hidden="true"></i>
+        <label class="visually-hidden" for="query">Tìm kiếm</label>
+        <input id="query" type="search" placeholder="Tìm bài hát, nghệ sĩ, album &amp; YouTube Music…" autocomplete="off">
+        <button id="query-clear" type="button" class="search-clear-btn" hidden aria-label="Xóa từ khóa tìm kiếm">✕</button>
+      </div>
+    </div>
+    <nav class="header-nav topbar-actions" aria-label="Tiện ích nhanh">
+      <button id="connect-open" type="button" class="icon-circle-btn connect-trigger" title="Thiết bị phát &amp; Handoff" aria-label="Chọn thiết bị phát"><i class="glyph" style="--glyph:url(simpmusic/devices.svg)" aria-hidden="true"></i></button>
+      <button id="mobile-more" type="button" class="icon-circle-btn mobile-more-btn" aria-label="Mở menu tùy chọn" aria-expanded="false" aria-controls="header-tools-menu"><i class="glyph" style="--glyph:url(simpmusic/more.svg)" aria-hidden="true"></i></button>
+      <div id="header-tools-menu" class="header-tools-menu">
+        <button id="nearby" type="button" class="icon-circle-btn mobile-menu-only" title="Thiết bị gần (LAN)" aria-label="Thiết bị gần"><i class="glyph" style="--glyph:url(simpmusic/devices.svg)" aria-hidden="true"></i><span class="menu-item-label">Thiết bị gần</span></button>
+        <button id="topbar-eq" type="button" class="icon-circle-btn" title="Equalizer 10 dải tần" aria-label="Mở Equalizer 10 dải tần" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/eq.svg)" aria-hidden="true"></i><span class="menu-item-label">Equalizer</span></button>
+        <button id="dj" type="button" class="icon-circle-btn" title="DJ &amp; AutoMix" aria-label="DJ và AutoMix"><i class="glyph" style="--glyph:url(simpmusic/dj.svg)" aria-hidden="true"></i><span class="menu-item-label">DJ &amp; AutoMix</span></button>
+        <button id="settings" type="button" class="icon-circle-btn" title="Cài đặt" aria-label="Cài đặt"><i class="glyph" style="--glyph:url(simpmusic/settings.svg)" aria-hidden="true"></i><span class="menu-item-label">Cài đặt</span></button>
+        <button id="now-panel-toggle" type="button" class="icon-circle-btn desktop-only-btn" title="Đóng / mở cột Đang phát" aria-pressed="true" aria-label="Đóng hoặc mở cột Đang phát"><i class="glyph" style="--glyph:url(simpmusic/panel-right.svg)" aria-hidden="true"></i></button>
+        <button id="account" type="button" class="account-avatar-btn" title="Tài khoản VelunaMusic" aria-label="Tài khoản"><span id="account-avatar-label">V</span><span class="menu-item-label">Tài khoản</span></button>
+      </div>
+    </nav>
   </header>
   <main>
     <nav class="library-rail" aria-label="Duyệt thư viện">
-      <button data-view="home" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/home.svg)" aria-hidden="true"></i>Trang chủ</button>
-      <button data-view="all" aria-pressed="true"><i class="glyph" style="--glyph:url(simpmusic/library.svg)" aria-hidden="true"></i>Thư viện</button>
-      <button data-view="album" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/album.svg)" aria-hidden="true"></i>Album</button>
-      <button data-view="artist" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/library.svg)" aria-hidden="true"></i>Nghệ sĩ</button>
-      <button data-view="favorite" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/favorite.svg)" aria-hidden="true"></i>Yêu thích</button>
-      <button data-view="recent" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/recent.svg)" aria-hidden="true"></i>Gần đây</button>
-      <button data-view="popular" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/popular.svg)" aria-hidden="true"></i>Nghe nhiều</button>
-      <button data-view="queue" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/queue.svg)" aria-hidden="true"></i>Hàng chờ</button>
+      <div class="rail-group">
+        <p class="rail-group-label">Chính</p>
+        <button type="button" data-view="home" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/home.svg)" aria-hidden="true"></i><span>Trang chủ</span></button>
+        <button type="button" data-view="discover" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/discover.svg)" aria-hidden="true"></i><span>Khám phá</span></button>
+      </div>
+      <div class="rail-group">
+        <p class="rail-group-label">Thư viện</p>
+        <button type="button" data-view="all" aria-pressed="true"><i class="glyph" style="--glyph:url(simpmusic/library.svg)" aria-hidden="true"></i><span>Thư viện</span></button>
+        <button type="button" data-view="favorite" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/favorite.svg)" aria-hidden="true"></i><span>Yêu thích</span></button>
+        <button type="button" data-view="playlists" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/playlist.svg)" aria-hidden="true"></i><span>Playlist</span></button>
+        <button type="button" data-view="album" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/album.svg)" aria-hidden="true"></i><span>Album</span></button>
+        <button type="button" data-view="artist" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/artist.svg)" aria-hidden="true"></i><span>Nghệ sĩ</span></button>
+        <button type="button" data-view="recent" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/recent.svg)" aria-hidden="true"></i><span>Gần đây</span></button>
+        <button type="button" data-view="popular" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/popular.svg)" aria-hidden="true"></i><span>Nghe nhiều</span></button>
+        <button type="button" data-view="queue" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/queue.svg)" aria-hidden="true"></i><span>Hàng chờ</span></button>
+      </div>
     </nav>
     <section class="collection">
-      <div class="heading"><h1 id="library-heading">Thư viện</h1><button id="add">＋ Thêm nhạc</button></div>
+      <div id="update-banner" class="update-banner" hidden role="status" aria-live="polite">
+        <span id="update-banner-text" class="update-banner-text"></span>
+        <div class="update-banner-actions">
+          <a id="update-download-link" class="update-download-btn" href="https://github.com/siloneedsleep/VelunaMusic/releases" target="_blank" rel="noopener noreferrer">Tải bản mới</a>
+          <button id="update-dismiss" type="button" class="update-dismiss-btn" aria-label="Đóng thông báo cập nhật">✕</button>
+        </div>
+      </div>
+      <div class="heading"><h1 id="library-heading">Thư viện</h1><button id="add" type="button" class="add-music-btn">＋ Thêm nhạc</button></div>
       <section id="home-shelves" hidden aria-label="Trang chủ">
+        <div id="home-mobile-head" class="home-mobile-head">
+          <button id="home-avatar" type="button" class="home-avatar" aria-label="Mở tài khoản">V</button>
+          <div id="home-top-pills" class="mood-chips home-top-pills" role="toolbar" aria-label="Lọc trang chủ">
+            <button type="button" class="mood-chip" data-home-pill="all" aria-pressed="true">Tất cả</button>
+            <button type="button" class="mood-chip" data-home-pill="music" aria-pressed="false">Nhạc</button>
+            <button type="button" class="mood-chip" data-home-pill="moods" aria-pressed="false">Moods</button>
+          </div>
+        </div>
+        <div id="home-quick-grid" class="home-quick-grid" hidden aria-label="Truy cập nhanh"></div>
         <div id="home-moods" class="mood-chips" role="toolbar" aria-label="Bộ lọc tâm trạng và thể loại" hidden></div>
         <div id="home-detail" class="home-detail" hidden></div>
         <div id="home-ytm" class="home-ytm-feed"></div>
         <div id="home-local" class="home-local-feed"></div>
       </section>
-      <label class="search">Tìm bài hát<input id="query" type="search" placeholder="Tên bài trong thư viện"></label>
+      <section id="unified-search" class="unified-search" hidden aria-label="Kết quả tìm kiếm hợp nhất">
+        <div id="unified-detail" class="home-detail" hidden></div>
+        <section id="unified-local" class="search-section" aria-labelledby="unified-local-heading">
+          <div class="search-section-head">
+            <h2 id="unified-local-heading">Trong thư viện</h2>
+            <span id="unified-local-count" class="count-badge">0</span>
+          </div>
+          <div id="unified-local-list" class="search-results-list"></div>
+        </section>
+        <section id="unified-ytm" class="search-section" aria-labelledby="unified-ytm-heading">
+          <div class="search-section-head">
+            <h2 id="unified-ytm-heading">YouTube Music</h2>
+            <span id="unified-ytm-count" class="count-badge">0</span>
+          </div>
+          <div id="unified-ytm-filters" class="mood-chips search-filter-chips" role="toolbar" aria-label="Lọc kết quả YouTube Music">
+            <button type="button" class="mood-chip" data-ytm-filter="all" aria-pressed="true">Tất cả</button>
+            <button type="button" class="mood-chip" data-ytm-filter="songs" aria-pressed="false">Bài hát</button>
+            <button type="button" class="mood-chip" data-ytm-filter="videos" aria-pressed="false">Video</button>
+            <button type="button" class="mood-chip" data-ytm-filter="albums" aria-pressed="false">Album</button>
+            <button type="button" class="mood-chip" data-ytm-filter="playlists" aria-pressed="false">Playlist</button>
+          </div>
+          <div id="unified-ytm-list" class="search-results-list"></div>
+        </section>
+      </section>
+      <div id="library-filter-bar" class="library-filter-bar">
+        <div id="library-filter-chips" class="mood-chips library-chips" role="toolbar" aria-label="Lọc thư viện">
+          <button type="button" class="mood-chip" data-lib-filter="all" aria-pressed="true">Tất cả</button>
+          <button type="button" class="mood-chip" data-lib-filter="playlist" aria-pressed="false">Playlist</button>
+          <button type="button" class="mood-chip" data-lib-filter="artist" aria-pressed="false">Nghệ sĩ</button>
+          <button type="button" class="mood-chip" data-lib-filter="album" aria-pressed="false">Album</button>
+          <button type="button" class="mood-chip" data-lib-filter="downloaded" aria-pressed="false">Đã tải về</button>
+        </div>
+        <button id="library-layout-toggle" type="button" class="layout-toggle-btn" aria-pressed="false" aria-label="Chuyển dạng danh sách hoặc lưới"><i class="glyph" style="--glyph:url(simpmusic/grid.svg)" aria-hidden="true"></i></button>
+      </div>
       <div id="group-picker" hidden><label><span id="group-label"></span> <select id="library-group"></select></label> <button id="group-play" disabled>Phát tất cả</button></div>
+      <div id="library-playlists-grid" class="library-playlists-grid" hidden></div>
       <div id="list"></div>
       <details id="playlist-panel" class="source-library"><summary>Playlist và yêu thích</summary>
         <form id="playlist-form"><label>Tên playlist <input id="playlist-name" required maxlength="100"></label><button>Tạo playlist</button></form>
@@ -68,7 +153,7 @@
       <details class="source-library"><summary>YouTube / YouTube Music</summary>
         <form id="ytm-search-form">
           <label class="search">Tìm kiếm YouTube Music<input id="ytm-query" type="search" required placeholder="Tên bài hát, live, remix, album, nghệ sĩ…"></label>
-          <label>Phân loại <select id="ytm-filter"><option value="all">Tất cả</option><option value="songs">Bài hát</option><option value="videos">Video</option><option value="albums">Album</option><option value="artists">Nghệ sĩ</option></select></label>
+          <label>Phân loại <select id="ytm-filter"><option value="all">Tất cả</option><option value="songs">Bài hát</option><option value="videos">Video</option><option value="albums">Album</option><option value="playlists">Playlist</option><option value="artists">Nghệ sĩ</option></select></label>
           <button type="submit">Tìm YouTube Music</button>
         </form>
         <p id="ytm-status" role="status"></p>
@@ -80,20 +165,62 @@
       </details>
     </section>
     <aside id="now-playing">
-      <div class="cover-stage"><img id="cover" src="icon.png" alt="" width="220" height="220" crossorigin="anonymous"></div>
-      <p>Đang nghe</p><h2 id="title" tabindex="-1">Chọn một bài hát</h2><div id="now-artist"></div>
+      <div class="now-desktop-head">
+        <span class="now-desktop-title">Đang phát</span>
+        <div class="now-desktop-actions">
+          <button id="now-desktop-queue" type="button" class="icon-circle-btn is-sm" title="Mở hàng chờ" aria-label="Mở hàng chờ"><i class="glyph" style="--glyph:url(simpmusic/queue.svg)" aria-hidden="true"></i></button>
+          <button id="now-panel-close" type="button" class="icon-circle-btn is-sm" title="Ẩn cột Đang phát" aria-label="Đóng cột Đang phát">✕</button>
+        </div>
+      </div>
+      <div class="now-sheet-header">
+        <button id="now-sheet-close" type="button" class="now-sheet-icon" aria-label="Thu gọn trình phát"><i class="glyph" style="--glyph:url(simpmusic/chevron-down.svg)" aria-hidden="true"></i></button>
+        <div class="now-sheet-source"><small>Đang phát từ</small><strong id="now-source-header">Thư viện</strong></div>
+        <button id="now-queue-btn" type="button" class="now-sheet-icon" aria-label="Mở hàng chờ"><i class="glyph" style="--glyph:url(simpmusic/queue.svg)" aria-hidden="true"></i></button>
+      </div>
+      <div class="cover-stage"><img id="cover" src="icon.png" alt="" width="268" height="268" crossorigin="anonymous"></div>
+      <div class="now-info-row">
+        <div class="now-info-text">
+          <h2 id="title" tabindex="-1">Chọn một bài hát</h2>
+          <div id="now-artist"></div>
+        </div>
+        <button id="now-favorite" type="button" class="icon-heart-btn" disabled aria-pressed="false" aria-label="Yêu thích"></button>
+      </div>
       <div id="now-badges" class="meta-badges"><span id="now-source-badge" class="badge" hidden></span><span id="now-quality-badge" class="badge" hidden></span></div>
       <div id="now-visualizer" class="visualizer" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
       <input id="seek" aria-label="Vị trí phát" type="range" min="0" max="0" value="0">
       <div class="time"><span id="elapsed">0:00</span><span id="duration">0:00</span></div>
       <div class="transport">
-        <button id="prev" aria-label="Bài trước"></button>
-        <button id="play" aria-label="Phát hoặc tạm dừng"></button>
-        <button id="next" aria-label="Bài kế"></button>
+        <button id="now-shuffle" type="button" aria-pressed="false" aria-label="Phát ngẫu nhiên: Tắt"></button>
+        <button id="prev" type="button" aria-label="Bài trước"></button>
+        <button id="play" type="button" aria-label="Phát hoặc tạm dừng"></button>
+        <button id="next" type="button" aria-label="Bài kế"></button>
+        <button id="now-repeat" type="button" aria-pressed="false" data-repeat="off" aria-label="Lặp lại: Tắt"></button>
       </div>
-      <div class="track-tools"><button id="now-favorite" disabled aria-pressed="false">Yêu thích</button> <button id="open-lyrics">Lời bài hát</button> <button id="collapse-mini" type="button" aria-pressed="false">Mini player</button></div>
+      <div class="now-utility-row track-tools">
+        <button id="now-device-pill" type="button" class="device-pill" aria-label="Chọn thiết bị phát"><i class="glyph" style="--glyph:url(simpmusic/devices.svg)" aria-hidden="true"></i><span id="now-device-label">Windows PC</span></button>
+        <button id="now-offline" type="button" class="utility-chip-btn" hidden aria-pressed="false" aria-label="Tải xuống nghe ngoại tuyến"><i class="glyph" style="--glyph:url(simpmusic/download.svg)" aria-hidden="true"></i><span>Tải về</span></button>
+        <button id="now-offline-remove" type="button" class="utility-chip-btn is-danger" hidden aria-label="Xóa bản tải về">Xóa tải về</button>
+        <button id="eq-open" type="button" class="utility-chip-btn" aria-pressed="false" aria-label="Mở bộ chỉnh âm Equalizer 10 dải tần">EQ</button>
+        <button id="open-lyrics" type="button" class="utility-chip-btn" aria-label="Mở lời bài hát toàn màn hình">Lời</button>
+        <button id="collapse-mini" type="button" class="utility-chip-btn" aria-pressed="false">Mini</button>
+      </div>
       <div id="window-tools" hidden><button id="mini-player">Thu gọn</button><button id="tray-player">Ẩn xuống khay</button></div>
-      <details class="listening"><summary>Tùy chọn phát và lời bài hát</summary>
+      <details id="lyrics-panel" class="listening" open><summary>Lời bài hát đồng bộ</summary>
+        <div id="lyrics-reader"><div class="lyric-toolbar">
+          <button id="lyrics-earlier" aria-label="Hiện lời sớm hơn 100 mili giây">−</button>
+          <output id="lyrics-offset" aria-live="polite">0 ms</output>
+          <button id="lyrics-later" aria-label="Hiện lời muộn hơn 100 mili giây">+</button>
+          <button id="lyrics-reset">Đặt lại</button><button id="lyrics-expand">Mở rộng</button>
+        </div><div id="lyrics-lines" aria-label="Lời bài hát"></div></div>
+      </details>
+      <section id="now-up-next" class="up-next-card" aria-labelledby="now-up-next-title">
+        <div class="up-next-head">
+          <h3 id="now-up-next-title">Hàng chờ tiếp theo</h3>
+          <button id="now-up-next-all" type="button" class="up-next-open-btn">Mở hàng chờ</button>
+        </div>
+        <div id="now-up-next-list" class="up-next-list"></div>
+      </section>
+      <details class="listening-options"><summary>Tùy chọn phát &amp; nguồn</summary>
         <label>Lặp <select id="repeat-mode"><option value="off">Tắt</option><option value="all">Hàng chờ</option><option value="one">Một bài</option></select></label>
         <button id="shuffle-queue">Trộn thứ tự hàng chờ</button>
         <button id="source-info">Chất lượng file đang chọn</button><p id="source-info-result" role="status"></p>
@@ -101,12 +228,6 @@
         <span id="sleep-status" role="status"></span>
         <label>Lời cho bài đang chọn <input id="lyrics-file" type="file" accept=".lrc,.txt,text/plain"></label>
         <button id="lyrics-clear">Xóa lời đã lưu</button>
-        <div id="lyrics-reader"><div class="lyric-toolbar">
-          <button id="lyrics-earlier" aria-label="Hiện lời sớm hơn 100 mili giây">−</button>
-          <output id="lyrics-offset" aria-live="polite">0 ms</output>
-          <button id="lyrics-later" aria-label="Hiện lời muộn hơn 100 mili giây">+</button>
-          <button id="lyrics-reset">Đặt lại</button><button id="lyrics-expand">Mở rộng</button>
-        </div><div id="lyrics-lines" aria-label="Lời bài hát"></div></div>
       </details>
     </aside>
   </main>
@@ -117,10 +238,92 @@
     </button>
     <div id="mini-visualizer" class="visualizer" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
     <div class="mini-actions">
+      <button id="mini-connect" type="button" aria-label="Chọn thiết bị phát"></button>
       <button id="mini-play" type="button" aria-label="Phát hoặc tạm dừng"></button>
       <button id="mini-next" type="button" aria-label="Bài kế"></button>
     </div>
+    <div class="mini-progress" aria-hidden="true"><div id="mini-progress-fill"></div></div>
   </section>
+  <nav id="mobile-bottom-nav" class="mobile-bottom-nav" aria-label="Điều hướng chính">
+    <button type="button" data-mobile-tab="home" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/home.svg)" aria-hidden="true"></i><span>Trang chủ</span></button>
+    <button type="button" data-mobile-tab="search" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/search.svg)" aria-hidden="true"></i><span>Tìm kiếm</span></button>
+    <button type="button" data-mobile-tab="library" aria-pressed="true"><i class="glyph" style="--glyph:url(simpmusic/library.svg)" aria-hidden="true"></i><span>Thư viện</span></button>
+  </nav>
+  <dialog id="connect-dialog" class="connect-sheet" closedby="any" aria-labelledby="connect-title">
+    <div class="connect-sheet-head">
+      <h2 id="connect-title">Kết nối thiết bị</h2>
+      <div class="connect-head-actions">
+        <button id="connect-refresh" type="button" class="connect-action-btn">Làm mới</button>
+        <button id="connect-close" type="button" class="connect-close-btn" aria-label="Đóng bảng chọn thiết bị">✕</button>
+      </div>
+    </div>
+    <div id="connect-active" class="connect-active"></div>
+    <label class="connect-listen-row"><input id="connect-listen-toggle" type="checkbox"> Cho phép nhận phiên nghe &amp; điều khiển trên máy này</label>
+    <section class="connect-group" aria-labelledby="connect-cloud-heading">
+      <h3 id="connect-cloud-heading">Thiết bị cùng tài khoản</h3>
+      <div id="connect-cloud-list" class="connect-device-list"></div>
+    </section>
+    <section id="connect-remote-strip" class="connect-remote-strip" hidden aria-label="Điều khiển thiết bị từ xa">
+      <div class="connect-remote-head"><strong id="connect-remote-name"></strong></div>
+      <div class="connect-remote-controls">
+        <button id="connect-remote-shuffle" type="button" aria-pressed="false">Trộn</button>
+        <button id="connect-remote-prev" type="button">Trước</button>
+        <button id="connect-remote-play" type="button" data-remote-action="play">Phát</button>
+        <button id="connect-remote-next" type="button">Sau</button>
+        <button id="connect-remote-repeat" type="button" data-repeat="off">Lặp</button>
+      </div>
+      <label class="connect-remote-vol">Âm lượng <input id="connect-remote-volume" type="range" min="0" max="100" value="100"></label>
+    </section>
+    <section class="connect-group" aria-labelledby="connect-lan-heading">
+      <h3 id="connect-lan-heading">Thiết bị LAN nội bộ</h3>
+      <div id="connect-lan-list" class="connect-device-list"></div>
+    </section>
+    <p id="connect-status" role="status"></p>
+  </dialog>
+  <dialog id="eq-dialog" class="eq-sheet" closedby="any" aria-labelledby="eq-title">
+    <div class="eq-sheet-head">
+      <div>
+        <h2 id="eq-title">Equalizer 10 dải tần</h2>
+        <p class="eq-subtitle">32Hz – 16kHz · Chống rè tự động &amp; chuẩn hóa âm lượng</p>
+      </div>
+      <div class="eq-head-actions">
+        <label class="eq-master-toggle"><input id="eq-enabled" type="checkbox"><span>Bật EQ</span></label>
+        <button id="eq-reset" type="button" class="eq-action-btn">Đặt lại 0 dB</button>
+        <button id="eq-close" type="button" class="connect-close-btn" aria-label="Đóng Equalizer">✕</button>
+      </div>
+    </div>
+    <div id="eq-presets" class="eq-presets" role="group" aria-label="Mẫu âm thanh Equalizer">
+      <button type="button" data-eq-preset="flat" aria-pressed="true">Mặc định</button>
+      <button type="button" data-eq-preset="bass" aria-pressed="false">Tăng Bass</button>
+      <button type="button" data-eq-preset="vocal" aria-pressed="false">Giọng hát</button>
+      <button type="button" data-eq-preset="electronic" aria-pressed="false">Điện tử</button>
+      <button type="button" data-eq-preset="acoustic" aria-pressed="false">Acoustic</button>
+      <button type="button" data-eq-preset="latenight" aria-pressed="false">Đêm khuya</button>
+    </div>
+    <div class="eq-rack-wrap">
+      <div class="eq-scale" aria-hidden="true"><span>+12</span><span>0 dB</span><span>−12</span></div>
+      <div id="eq-bands" class="eq-bands">
+        <div class="eq-band"><output id="eq-band-value-0" for="eq-band-0">0 dB</output><div class="eq-slider-slot"><input id="eq-band-0" class="eq-slider" type="range" min="-12" max="12" step="0.5" value="0" data-band="0" aria-valuetext="0 dB"></div><label for="eq-band-0">32Hz</label></div>
+        <div class="eq-band"><output id="eq-band-value-1" for="eq-band-1">0 dB</output><div class="eq-slider-slot"><input id="eq-band-1" class="eq-slider" type="range" min="-12" max="12" step="0.5" value="0" data-band="1" aria-valuetext="0 dB"></div><label for="eq-band-1">64Hz</label></div>
+        <div class="eq-band"><output id="eq-band-value-2" for="eq-band-2">0 dB</output><div class="eq-slider-slot"><input id="eq-band-2" class="eq-slider" type="range" min="-12" max="12" step="0.5" value="0" data-band="2" aria-valuetext="0 dB"></div><label for="eq-band-2">125Hz</label></div>
+        <div class="eq-band"><output id="eq-band-value-3" for="eq-band-3">0 dB</output><div class="eq-slider-slot"><input id="eq-band-3" class="eq-slider" type="range" min="-12" max="12" step="0.5" value="0" data-band="3" aria-valuetext="0 dB"></div><label for="eq-band-3">250Hz</label></div>
+        <div class="eq-band"><output id="eq-band-value-4" for="eq-band-4">0 dB</output><div class="eq-slider-slot"><input id="eq-band-4" class="eq-slider" type="range" min="-12" max="12" step="0.5" value="0" data-band="4" aria-valuetext="0 dB"></div><label for="eq-band-4">500Hz</label></div>
+        <div class="eq-band"><output id="eq-band-value-5" for="eq-band-5">0 dB</output><div class="eq-slider-slot"><input id="eq-band-5" class="eq-slider" type="range" min="-12" max="12" step="0.5" value="0" data-band="5" aria-valuetext="0 dB"></div><label for="eq-band-5">1kHz</label></div>
+        <div class="eq-band"><output id="eq-band-value-6" for="eq-band-6">0 dB</output><div class="eq-slider-slot"><input id="eq-band-6" class="eq-slider" type="range" min="-12" max="12" step="0.5" value="0" data-band="6" aria-valuetext="0 dB"></div><label for="eq-band-6">2kHz</label></div>
+        <div class="eq-band"><output id="eq-band-value-7" for="eq-band-7">0 dB</output><div class="eq-slider-slot"><input id="eq-band-7" class="eq-slider" type="range" min="-12" max="12" step="0.5" value="0" data-band="7" aria-valuetext="0 dB"></div><label for="eq-band-7">4kHz</label></div>
+        <div class="eq-band"><output id="eq-band-value-8" for="eq-band-8">0 dB</output><div class="eq-slider-slot"><input id="eq-band-8" class="eq-slider" type="range" min="-12" max="12" step="0.5" value="0" data-band="8" aria-valuetext="0 dB"></div><label for="eq-band-8">8kHz</label></div>
+        <div class="eq-band"><output id="eq-band-value-9" for="eq-band-9">0 dB</output><div class="eq-slider-slot"><input id="eq-band-9" class="eq-slider" type="range" min="-12" max="12" step="0.5" value="0" data-band="9" aria-valuetext="0 dB"></div><label for="eq-band-9">16kHz</label></div>
+      </div>
+    </div>
+    <div class="eq-norm-card">
+      <label class="eq-norm-toggle">
+        <input id="eq-normalize" type="checkbox">
+        <span><strong>Chuẩn hóa âm lượng (Loudness Normalization)</strong><small>Tự cân bằng âm lượng giữa các bài hát (−14 LUFS) và chống méo tiếng</small></span>
+      </label>
+      <span id="eq-norm-gain" class="eq-norm-badge">Tắt</span>
+    </div>
+    <p id="eq-status" role="status"></p>
+  </dialog>
   <p role="status" id="message"></p>
   <div id="nearby-drop" hidden>Thả bài để gửi sang PC</div>
   <dialog id="lyrics-dialog" aria-labelledby="lyrics-title"><h2 id="lyrics-title">Lời bài hát</h2><button id="lyrics-close">Đóng</button></dialog>
@@ -216,6 +419,7 @@
     <h2 id="prefs-title">Cài đặt</h2>
     <label>Màu nhấn <input id="color" type="color" value="#83d8ff"></label>
     <details><summary>Âm thanh và đầu ra</summary>
+      <button id="prefs-open-eq" type="button">Mở Equalizer 10 dải tần</button>
       <label>Hồ sơ âm thanh <select id="sound-profile"><option value="speaker">Loa</option><option value="headphones">Tai nghe</option><option value="bluetooth">Bluetooth</option></select></label>
       <label><input type="checkbox" id="sound-enabled"> Bật EQ cho hồ sơ này</label>
       <label>Trầm <input id="sound-bass" type="range" min="-6" max="6" step="1"> <output id="sound-bass-value"></output></label>
@@ -242,10 +446,12 @@
     <label>Bóng đổ <input type="range" id="glass-shadow" min="0" max="100"></label>
     <label>Bo góc <input type="range" id="glass-radius" min="0" max="42"></label>
     <label>Cỡ chữ <input type="range" id="theme-scale" min="90" max="150" step="5"></label>
+    <div class="prefs-motion-row"><button id="motion-toggle" type="button" aria-pressed="false">Giảm chuyển động</button></div>
     <label><input type="checkbox" id="theme-motion"> Hiệu ứng chuyển động</label>
     <label>Mức chuyển động <select id="motion-level"><option value="full">Đầy đủ</option><option value="balanced">Cân bằng</option><option value="economy">Tiết kiệm</option><option value="reduced">Giảm chuyển động</option></select></label>
     <label><input type="checkbox" id="dynamic-cover-bg" checked> Đổi màu nền động theo bìa đĩa</label>
     <label><input type="checkbox" id="battery-saver" checked> Tự hạ blur/visualizer khi dùng pin</label>
+    <label id="discord-rpc-row" hidden><input type="checkbox" id="discord-rpc-enabled"> Hiển thị trạng thái trên Discord (Rich Presence)</label>
     <label>Vị trí ảnh nền <select id="back-position"><option value="center">Giữa</option><option value="top">Trên</option><option value="bottom">Dưới</option></select></label>
     <label>Lớp phủ ảnh nền <input type="range" id="back-shade" min="0" max="95"></label>
     <button id="theme-inherit">Dùng lại thiết lập chung</button>
@@ -258,7 +464,8 @@
       <details><summary>Material Icons · Apache 2.0</summary><pre id="license-icons"></pre></details>
       <details><summary>Poppins · OFL 1.1</summary><pre id="license-font"></pre></details>
     </details>
-    <button id="reset">Xóa ảnh nền</button><button id="check">Kiểm tra cập nhật</button><button id="done">Xong</button>
+    <p id="update-status" role="status"></p>
+    <button id="reset">Xóa ảnh nền</button><button id="check" type="button">Kiểm tra cập nhật</button><button id="done">Xong</button>
   </dialog>
   <dialog id="upgrade" aria-labelledby="upgrade-title">
     <h2 id="upgrade-title">Có bản cập nhật mới</h2><p id="version"></p>

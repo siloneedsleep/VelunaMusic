@@ -89,3 +89,13 @@ function wordProgress(entry, time) {
   const ratio=Math.max(0, Math.min(1, (time-start)/(nextTime-start)));
   return {index:idx,ratio};
 }
+
+function lyricStateAt(entries, time) {
+  if (!Array.isArray(entries) || !entries.length || entries[0]?.time === null) {
+    return { lineIndex: -1, wordIndex: -1, wordRatio: 0 };
+  }
+  const lineIndex = lyricAt(entries, time);
+  if (lineIndex < 0) return { lineIndex: -1, wordIndex: -1, wordRatio: 0 };
+  const wp = wordProgress(entries[lineIndex], time);
+  return { lineIndex, wordIndex: wp.index, wordRatio: wp.ratio };
+}

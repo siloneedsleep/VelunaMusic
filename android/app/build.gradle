@@ -18,6 +18,13 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { buildConfig true }
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+        }
+    }
     sourceSets.main.jniLibs.srcDirs = [layout.buildDirectory.dir("generated/velunaJni")]
     sourceSets.main.assets.srcDirs = ["../../ui"]
     compileOptions {

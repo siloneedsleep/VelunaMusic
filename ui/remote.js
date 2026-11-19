@@ -1,9 +1,9 @@
 "use strict";
 
-function playerRemote({config,session,device,refresh,request,onHandoff}) {
+function playerRemote({config,session,device,refresh,request,onHandoff,onPeersChange}) {
   const picker=el("remote-device"), opt=el("remote-listen"), queue=el("remote-queue");
   const peers=new Map(), seen=new Map(), pending=new Map();
-  const status=s=>{el("remote-status").textContent=s;};
+  const status=s=>{el("remote-status").textContent=s;if(el("connect-status"))el("connect-status").textContent=s;};
   let socket=null, owner="", topic="", joined=false, sequence=0, heart=0, reconnect=0, token="";
   let incarnation="", queueVersion="", previousOrder=null, retry=1000, changed=0, lastState="";
   const me=()=>device().device_id;
@@ -13,7 +13,7 @@ function playerRemote({config,session,device,refresh,request,onHandoff}) {
   const mailbox=request && remoteMailbox({request,owner:()=>owner,device:me,status,
     canReceive:listens,execute:m=>listens()?execute(m):null,
     renderConflict(op){conflict=op;el("remote-conflict").hidden=false;status("Hàng chờ trên máy phát đã đổi.");}});
-  function wanted(){return session() && (listens() || (!document.hidden && el("account-dialog").open));}
+  function wanted(){return session() && (listens() || (!document.hidden && (el("account-dialog").open || el("connect-dialog")?.open)));}
   function rememberPeers(){
     if(mailbox && owner)localStorage.setItem("remote-peers/"+owner,JSON.stringify([...peers].filter(([,p])=>p.durable).slice(-16)));
   }
@@ -30,16 +30,23 @@ function playerRemote({config,session,device,refresh,request,onHandoff}) {
       previousOrder=order.slice();queueVersion=crypto.randomUUID();
     }
     const titles=new Map(tracks.map(t=>[t.id,t.title]));
-    return {durable:!!mailbox,instance:incarnation,label:device().label,version:queueVersion,playing:document.body.dataset.playing==="true",
-      title:titles.get(selected)||"",seconds:native?(Number(el("seek").value)||0):(Number(audio.currentTime)||0),duration:!native && Number.isFinite(audio.duration)?audio.duration:(Number(el("seek").max)||0),
-      volume:native?native.playerVolume():Math.round(audio.volume*100),index:order.indexOf(selected),
+    const sec=native?(Number(el("seek")?.value)||0):(Number(audio.currentTime)||0);
+    const dur=!native && Number.isFinite(audio.duration)?audio.duration:(Number(el("seek")?.max)||0);
+    const playing=document.body.dataset.playing==="true";
+    const repeatVal=el("repeat-mode")?.value || "off";
+    const shuffled=Boolean(window.velunaListening?.isShuffled?.());
+    return {durable:!!mailbox,instance:incarnation,label:device().label,platform:device().platform || (native?"android":"windows"),
+      version:queueVersion,playing,isPlaying:playing,trackId:selected||"",positionMs:Math.round(sec*1000),updatedAt:Date.now(),
+      title:titles.get(selected)||"",seconds:sec,duration:dur,
+      volume:native?native.playerVolume():Math.round(audio.volume*100),index:order.indexOf(selected),currentIndex:order.indexOf(selected),
+      shuffle:shuffled,repeat:repeatVal,
       queue:order.slice(0,300).map(id=>(titles.get(id)||"").slice(0,160))};
   }
   function announce(to){if(listens() && joined)broadcast("state",{to,state:snapshot()});}
   function playbackChanged(){
     if(!listens() || !joined || changed)return;
     changed=setTimeout(()=>{changed=0;if(!listens() || !joined)return;
-      const state=snapshot(), key=JSON.stringify([state.version,state.index,state.title,state.playing,state.volume]);
+      const state=snapshot(), key=JSON.stringify([state.version,state.index,state.title,state.playing,state.volume,state.shuffle,state.repeat]);
       if(key!==lastState){lastState=key;broadcast("state",{state});}
     },180);
   }
@@ -47,9 +54,11 @@ function playerRemote({config,session,device,refresh,request,onHandoff}) {
     const previous=picker.value;
     picker.replaceChildren(...[...peers].map(([id,p])=>new Option(p.label+(p.offline?" · ngoại tuyến":""),id,false,id===previous)));
     const p=peers.get(picker.value);el("remote-controls").hidden=!p;
-    if(!p)return;
-    el("remote-seek").max=p.duration;el("remote-seek").value=p.seconds;
-    el("remote-volume").value=p.volume;queue.replaceChildren(...p.queue.map((v,i)=>new Option(v,String(i),false,i===p.index)));
+    if(p){
+      el("remote-seek").max=p.duration;el("remote-seek").value=p.seconds;
+      el("remote-volume").value=p.volume;queue.replaceChildren(...p.queue.map((v,i)=>new Option(v,String(i),false,i===p.index)));
+    }
+    onPeersChange?.([...peers.entries()].map(([id,peer])=>({id,...peer})), picker.value);
   }
   function disconnect(){
     clearTimeout(changed);clearTimeout(reconnect);clearInterval(heart);reconnect=heart=changed=0;joined=false;lastState="";
@@ -69,7 +78,7 @@ function playerRemote({config,session,device,refresh,request,onHandoff}) {
     if(!wanted()){if(socket || reconnect)disconnect();return;}
     if(socket){
       if(joined && token!==auth.access){token=auth.access;sendFrame("access_token",{access_token:token});}
-      if(joined && el("account-dialog").open)broadcast("discover");
+      if(joined && (el("account-dialog").open || el("connect-dialog")?.open))broadcast("discover");
       return;
     }
     clearTimeout(reconnect);reconnect=0;
@@ -134,11 +143,12 @@ function playerRemote({config,session,device,refresh,request,onHandoff}) {
     try{
       const state=snapshot();
       if(m.instance!==incarnation)throw Error("Phiên phát đã đổi.");
-      if(!["play","pause","next","previous","seek","volume","select","move"].includes(m.action))throw Error("Lệnh không hợp lệ.");
+      if(!["play","pause","next","previous","seek","volume","select","move","shuffle","repeat"].includes(m.action))throw Error("Lệnh không hợp lệ.");
       if(m.version!==state.version)throw Error("Hàng chờ đã đổi.");
       let value=Number(m.value);
       if(!Number.isFinite(value) || (["move","select"].includes(m.action) && (!Number.isInteger(value) || value<0 || value>=state.queue.length)) ||
-        (m.action==="seek" && (value<0 || value>state.duration)) || (m.action==="volume" && (value<0 || value>100)))throw Error("Giá trị ngoài phạm vi.");
+        (m.action==="seek" && (value<0 || value>state.duration)) || (m.action==="volume" && (value<0 || value>100)) ||
+        (m.action==="repeat" && (!Number.isInteger(value) || value<0 || value>2)))throw Error("Giá trị ngoài phạm vi.");
       if(native)await nativeTransfer("remotePlayer",JSON.stringify({action:m.action,value,destination:m.destination}));
       else {
         const order=playOrder(),i=order.indexOf(selected);
@@ -151,6 +161,12 @@ function playerRemote({config,session,device,refresh,request,onHandoff}) {
         if(m.action==="pause")audio.pause();
         if(m.action==="seek")audio.currentTime=value;
         if(m.action==="volume"){window.velunaDJ?.stopFade();audio.volume=value/100;}
+        if(m.action==="shuffle")window.velunaListening?.toggleShuffle?.(value!==0);
+        if(m.action==="repeat"){
+          const modes=["off","one","all"];
+          const modeEl=el("repeat-mode");
+          if(modeEl){modeEl.value=modes[value] || "off";modeEl.onchange?.();}
+        }
         if(["next","previous","select"].includes(m.action)){
           const target=m.action==="select"?value:i+(m.action==="next"?1:-1);
           if(!order[target])throw Error("Không còn bài theo hướng này.");
@@ -191,5 +207,13 @@ function playerRemote({config,session,device,refresh,request,onHandoff}) {
   document.addEventListener("visibilitychange",()=>{update();});
   window.addEventListener("pagehide",()=>{if(listens())broadcast("offline");disconnect();});
   window.addEventListener("veluna-library",playbackChanged);window.addEventListener("veluna-playback",playbackChanged);
-  render();return {update};
+  render();
+  return {
+    update,
+    command,
+    snapshot,
+    getPeers:()=>[...peers.entries()].map(([id,p])=>({id,...p})),
+    getActivePeer:()=>peers.get(picker.value) ? {id:picker.value,...peers.get(picker.value)} : null,
+    selectPeer(id){if(peers.has(id)){picker.value=id;render();return true;}return false;}
+  };
 }

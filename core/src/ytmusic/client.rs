@@ -102,9 +102,7 @@ impl Default for InnerTubeClient {
 
 impl InnerTubeClient {
     pub fn new() -> Self {
-        let http = Client::builder()
-            .timeout(Duration::from_secs(20))
-            .build()
+        let http = crate::http::build_client(Duration::from_secs(20), None)
             .unwrap_or_else(|_| Client::new());
         Self {
             http,

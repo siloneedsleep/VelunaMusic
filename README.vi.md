@@ -184,11 +184,13 @@ Bài kiểm thử cô lập tài khoản Supabase trực tiếp trong `tests/` s
 - **Toàn vẹn nội dung bằng SHA-256.** Tệp nhạc nội bộ được định danh bằng mã băm SHA-256 cho đồng bộ playlist ngoại tuyến và chuyển phiên phát; tệp nhận qua mạng LAN được kiểm tra khớp SHA-256 với máy gửi trước khi thêm vào thư viện.
 - **Bảo vệ máy chủ loopback và LAN.** Media server trên Windows chỉ lắng nghe trên giao diện loopback, yêu cầu capability token ngẫu nhiên, từ chối mọi `Origin` lạ và chỉ chấp nhận single byte range hợp lệ. Máy nhận LAN bắt buộc ghép đôi mã QR mang theo token truy cập và dấu vân tay chứng chỉ TLS (certificate pinning).
 - **Dữ liệu tài khoản.** Supabase chỉ lưu thông tin tài khoản, thiết bị, siêu dữ liệu thư viện, trạng thái chuyển phiên và lệnh điều khiển từ xa ngắn hạn với cơ chế cô lập theo từng tài khoản trong `supabase/migrations/`.
-- **Trang web.** `site/vercel.json` áp dụng chính sách Content Security Policy nghiêm ngặt, giới hạn script, style, ảnh về cùng nguồn gốc và chỉ mở kết nối mạng tới GitHub API.
+- **Trang web & Chính sách pháp lý.** `site/vercel.json` áp dụng chính sách Content Security Policy nghiêm ngặt, giới hạn script, style, ảnh về cùng nguồn gốc và chỉ mở kết nối mạng tới GitHub API. Xem chi tiết [Chính sách quyền riêng tư](https://veluna.siloneedsleep.xyz/privacy) và [Điều khoản sử dụng](https://veluna.siloneedsleep.xyz/terms).
 
 ## Ghi nhận mã nguồn mở và giấy phép
 
 VelunaMusic được phát hành theo giấy phép [GNU General Public License v3.0](LICENSE). Dự án kế thừa và tham khảo kỹ thuật từ [SimpMusic](https://github.com/maxrave-dev/SimpMusic) và [PipePipeExtractor](https://github.com/maxrave-dev/PipePipeExtractor), đồng thời tích hợp bộ phông chữ Poppins theo giấy phép SIL Open Font License 1.1. Xem đầy đủ danh sách kế thừa và văn bản giấy phép tại [THIRD_PARTY.md](THIRD_PARTY.md).
+
+Chứng thư ký mã nguồn mở miễn phí trên Windows được cung cấp bởi [SignPath.io](https://signpath.io) với chứng chỉ từ [SignPath Foundation](https://signpath.org).
 
 Phát triển bởi [@siloneedsleep](https://github.com/siloneedsleep).
 

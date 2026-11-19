@@ -53,3 +53,17 @@ test("declining the handoff leaves the source untouched",async()=>{
   await target.el("decline-transfer").onclick();await source.step();
   assert.equal(db.row.phase,"cancelled");assert.equal(source.state.playing,true);assert.equal(target.state.playing,false);
 });
+test("handoff compensates network latency when resuming a playing session",async()=>{
+  const {source,target,db}=devices();
+  const baseNow=Date.now();
+  assert.equal(source.handoff.compensatedPositionSec(10000,new Date(baseNow-1400).toISOString(),true,baseNow),11.4);
+  assert.equal(source.handoff.compensatedPositionSec(10000,new Date(baseNow-1400).toISOString(),false,baseNow),10);
+  assert.equal(source.handoff.compensatedPositionSec(10000,new Date(baseNow-60000).toISOString(),true,baseNow),10);
+  await source.handoff.send("target");target.handoff.open();await target.step();
+  await target.el("accept-transfer").onclick();
+  await source.step();
+  db.row.updated_at=new Date(Date.now()-1200).toISOString();
+  await target.step();
+  assert.equal(target.state.playing,true);
+  assert.ok(target.state.time>=18.3 && target.state.time<=19.5,"Expected latency-compensated time near 18.5s, got "+target.state.time);
+});

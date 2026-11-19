@@ -506,21 +506,30 @@ fn parse_helper_object(
     obj_name: &str,
     table: &[String],
 ) -> HashMap<String, HelperMethodKind> {
+    static METHOD_RE: OnceLock<Regex> = OnceLock::new();
+    static TBL_IDX_RE: OnceLock<Regex> = OnceLock::new();
     let mut map = HashMap::new();
     let pattern = format!("var {}={{", obj_name);
     let alt_pattern = format!("var {} = {{", obj_name);
     let Some(start) = js.find(&pattern).or_else(|| js.find(&alt_pattern)) else {
         return map;
     };
-    let slice = &js[start..(start + 1500).min(js.len())];
+    let mut bound = (start + 1500).min(js.len());
+    while bound > start && !js.is_char_boundary(bound) {
+        bound -= 1;
+    }
+    let slice = &js[start..bound];
     let Some(end) = slice.find("};") else {
         return map;
     };
     let obj_body = &slice[..end];
 
-    let method_re = Regex::new(r"([A-Za-z0-9_$]+)\s*:\s*function\([^)]*\)\s*\{([^}]*)\}")
-        .expect("helper method regex");
-    let tbl_idx_re = Regex::new(r"\[[A-Za-z0-9_$]+\[(\d+)\]\]").expect("tbl idx regex");
+    let method_re = METHOD_RE.get_or_init(|| {
+        Regex::new(r"([A-Za-z0-9_$]+)\s*:\s*function\([^)]*\)\s*\{([^}]*)\}")
+            .expect("helper method regex")
+    });
+    let tbl_idx_re = TBL_IDX_RE
+        .get_or_init(|| Regex::new(r"\[[A-Za-z0-9_$]+\[(\d+)\]\]").expect("tbl idx regex"));
 
     for cap in method_re.captures_iter(obj_body) {
         let m_name = cap[1].to_string();
@@ -567,11 +576,12 @@ fn parse_modern_sig_ops(js: &str, spec: &str) -> Vec<CipherOp> {
     };
 
     let d_xor = arg_a ^ arg_b;
-    let obj_call_re = Regex::new(&format!(
+    let Ok(obj_call_re) = Regex::new(&format!(
         r"([A-Za-z0-9_$]+)\[{}\[([^\]]+)\]\]\([A-Za-z0-9_$]+\s*,\s*([^)]+)\)",
         regex::escape(&tbl_name)
-    ))
-    .expect("obj call regex");
+    )) else {
+        return Vec::new();
+    };
 
     let mut helper_name = None;
     for cap in obj_call_re.captures_iter(branch) {
@@ -648,8 +658,10 @@ fn parse_classic_sig_ops(js: &str) -> Vec<CipherOp> {
         return Vec::new();
     };
     let steps = &cap[1];
-    let step_re =
-        Regex::new(r"([A-Za-z0-9_$]+)\.([A-Za-z0-9_$]+)\([A-Za-z0-9_$]+,(\d+)\)").expect("step re");
+    static STEP_RE: OnceLock<Regex> = OnceLock::new();
+    let step_re = STEP_RE.get_or_init(|| {
+        Regex::new(r"([A-Za-z0-9_$]+)\.([A-Za-z0-9_$]+)\([A-Za-z0-9_$]+,(\d+)\)").expect("step re")
+    });
     let Some(obj) = step_re.captures(steps).map(|s| s[1].to_owned()) else {
         return Vec::new();
     };
@@ -714,5 +726,15 @@ Yx = function(a, b, c) {
             ops,
             vec![CipherOp::Splice(3), CipherOp::Reverse, CipherOp::Swap(4),]
         );
+    }
+
+    #[test]
+    fn helper_object_parser_handles_multibyte_utf8_at_slice_boundary() {
+        let mut js = String::from("var QF={w4:function(a,b){a.splice(0,b)}};");
+        js.push_str(&"a".repeat(1458));
+        js.push('ế');
+        js.push_str("tail");
+        let map = parse_helper_object(&js, "QF", &[]);
+        assert!(matches!(map.get("w4"), Some(HelperMethodKind::Splice)));
     }
 }

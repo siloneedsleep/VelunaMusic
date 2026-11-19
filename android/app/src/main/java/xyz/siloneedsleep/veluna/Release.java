@@ -35,14 +35,20 @@ final class Release {
                 JSONObject release = new JSONObject(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
                 String tag = release.getString("tag_name");
                 if (release.getBoolean("draft") || release.getBoolean("prerelease") || !MainActivity.newerRelease(BuildConfig.VERSION_NAME, tag)) return null;
-                String url = "https://github.com/siloneedsleep/VelunaMusic/releases/download/" + tag + "/" + ASSET;
+                String versionedAsset = "VelunaMusic-" + tag + "-android.apk";
+                String versionedUrl = "https://github.com/siloneedsleep/VelunaMusic/releases/download/" + tag + "/" + versionedAsset;
+                String legacyUrl = "https://github.com/siloneedsleep/VelunaMusic/releases/download/" + tag + "/" + ASSET;
                 JSONArray assets = release.getJSONArray("assets");
                 for (int i = 0; i < assets.length(); i++) {
                     JSONObject a = assets.getJSONObject(i);
+                    String name = a.optString("name");
+                    String dlUrl = a.optString("browser_download_url");
                     long size = a.optLong("size");
                     String digest = a.optString("digest");
-                    if (ASSET.equals(a.optString("name")) && "uploaded".equals(a.optString("state")) && url.equals(a.optString("browser_download_url"))
-                        && size > 0 && size <= 256L * 1024 * 1024 && digest.matches("sha256:[0-9a-f]{64}")) return new Release(tag, url, digest.substring(7), size);
+                    boolean matches = (versionedAsset.equals(name) && versionedUrl.equals(dlUrl))
+                        || (ASSET.equals(name) && legacyUrl.equals(dlUrl));
+                    if (matches && "uploaded".equals(a.optString("state"))
+                        && size > 0 && size <= 256L * 1024 * 1024 && digest.matches("sha256:[0-9a-f]{64}")) return new Release(tag, dlUrl, digest.substring(7), size);
                 }
                 throw new IOException("Missing verified Android asset");
             }

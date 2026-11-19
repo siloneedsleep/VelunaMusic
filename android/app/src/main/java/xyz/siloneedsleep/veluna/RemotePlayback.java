@@ -242,13 +242,7 @@ final class RemotePlayback implements Player.Listener, AutoCloseable {
     }
   }
   static JSONObject obj(Object... pairs) {
-    JSONObject o = new JSONObject();
-    try {
-      for (int i = 0; i < pairs.length; i += 2) o.put((String) pairs[i], pairs[i + 1]);
-    } catch (org.json.JSONException e) {
-      throw new IllegalArgumentException(e);
-    }
-    return o;
+    return MediaHelpers.jsonObj(pairs);
   }
   private void frame(String channel, String event, JSONObject payload) {
     if (socket != null)
@@ -278,13 +272,25 @@ final class RemotePlayback implements Player.Listener, AutoCloseable {
       names.put(name.substring(0, Math.min(160, name.length())));
     }
     MediaItem current = player.getCurrentMediaItem();
+    long posMs = Math.max(0L, player.getCurrentPosition());
+    String repeatStr = player.getRepeatMode() == Player.REPEAT_MODE_ONE ? "one"
+        : player.getRepeatMode() == Player.REPEAT_MODE_ALL ? "all" : "off";
     broadcast(obj("type", "state", "to", to, "state",
-        obj("durable", true, "instance", instance, "version", version, "label", label, "playing",
-            player.isPlaying(), "title",
-            current == null ? "" : String.valueOf(current.mediaMetadata.title), "seconds",
-            player.getCurrentPosition() / 1000.0, "duration",
-            Math.max(0, player.getDuration()) / 1000.0, "volume",
-            Math.round(player.getVolume() * 100), "index", player.getCurrentMediaItemIndex(),
+        obj("durable", true, "instance", instance, "version", version, "label", label,
+            "platform", "android",
+            "trackId", current == null ? "" : current.mediaId,
+            "positionMs", posMs,
+            "isPlaying", player.isPlaying(),
+            "updatedAt", System.currentTimeMillis(),
+            "currentIndex", player.getCurrentMediaItemIndex(),
+            "shuffle", player.getShuffleModeEnabled(),
+            "repeat", repeatStr,
+            "playing", player.isPlaying(),
+            "title", current == null ? "" : String.valueOf(current.mediaMetadata.title),
+            "seconds", posMs / 1000.0,
+            "duration", Math.max(0, player.getDuration()) / 1000.0,
+            "volume", Math.round(player.getVolume() * 100),
+            "index", player.getCurrentMediaItemIndex(),
             "queue", names)));
   }
   @Override
@@ -392,6 +398,14 @@ final class RemotePlayback implements Player.Listener, AutoCloseable {
         int dest = command.getInt("destination");
         checkIndex(p, dest, command.getDouble("destination"));
         p.moveMediaItem(i, dest);
+        break;
+      case "shuffle":
+        p.setShuffleModeEnabled(value != 0);
+        break;
+      case "repeat":
+        if (i != value || i < 0 || i > 2)
+          throw new IllegalArgumentException();
+        p.setRepeatMode(i);
         break;
       default:
         throw new IllegalArgumentException("Lệnh không hợp lệ.");
