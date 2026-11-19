@@ -215,6 +215,7 @@ mod tests {
     use models::RecordingKind;
 
     #[test]
+    #[ignore = "requires residential IP"]
     fn ytmusic_live_search_and_stream_200_ok() {
         let rt = shared_runtime();
         let svc = YtMusicService::new();
