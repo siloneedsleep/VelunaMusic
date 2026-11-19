@@ -9,7 +9,7 @@
   try { history = new Map(JSON.parse(localStorage.getItem("play-history") || "[]")); } catch {}
   const grouped = () => view === "album" || view === "artist";
   const label = t => tags.get(t.id)?.title || t.title;
-  const indexing = () => grouped() || view === "home";
+  const indexing = () => grouped() || view === "home" || el("dj-dialog").open;
   const albumKey = tag => tag?.album ? JSON.stringify([tag.album,tag.album_artist || ""]) : "";
   const groupOf = t => view === "album" ? albumKey(tags.get(t.id)) : tags.get(t.id)?.artist || "";
   const groupName = value => view !== "album" ? value : JSON.parse(value).filter(Boolean).join(" · ");
@@ -33,16 +33,34 @@
     if (native) return nativeTransfer(artwork ? "readCover" : "readTags", id);
     if (desktop) return desktop.invoke("media_tags", {id,artwork});
   }
+  function orderedAlbum(key){
+    return tracks.filter(t=>key && albumKey(tags.get(t.id))===key).sort((a,b)=>{
+      const first=tags.get(a.id),second=tags.get(b.id);
+      return (first.disc || 1)-(second.disc || 1) || (first.track ?? Number.MAX_SAFE_INTEGER)-(second.track ?? Number.MAX_SAFE_INTEGER);
+    }).map(t=>t.id);
+  }
+  function albumChoices() {
+    if(!el("dj-dialog").open)return;
+    const choose=el("dj-album"),previous=choose.value;
+    const keys=[...new Set(tracks.map(t=>albumKey(tags.get(t.id))).filter(Boolean))];
+    const name=key=>JSON.parse(key).filter(Boolean).join(" · ");
+    keys.sort((a,b)=>name(a).localeCompare(name(b),"vi"));
+    choose.replaceChildren(new Option("Chọn album",""),...keys.map(k=>new Option(name(k),k)));
+    if(keys.includes(previous))choose.value=previous;
+    el("dj-play-album").disabled=scanning || !choose.value;
+  }
   function groupChoices() {
     if (!grouped()) return;
     const values = [...new Set(tracks.map(groupOf).filter(Boolean))].sort((a,b)=>groupName(a).localeCompare(groupName(b),"vi"));
     if (!values.includes(group)) group = "";
     picker.replaceChildren(new Option("Tất cả", ""), ...values.map(value=>new Option(groupName(value),value)));
     picker.value = group;
+    el("group-play").disabled=scanning || !group;
   }
   async function scan() {
     if (scanning || !indexing() || document.hidden) return;
     scanning = true;
+    el("dj-play-album").disabled=true;el("group-play").disabled=true;
     try {
       let n=0;
       for (const track of tracks) {
@@ -52,7 +70,7 @@
         catch { tags.set(track.id,{}); }
         if (++n % 12 === 0 && grouped() && !document.hidden) { groupChoices(); drawList(); }
       }
-    } finally { scanning = false; groupChoices(); shelves(); drawList(); }
+    } finally { scanning = false; groupChoices(); albumChoices(); shelves(); drawList(); }
   }
   const home=el("home-shelves"), artCache=new Map();
   let shelfKey="", loadingCovers=false;
@@ -173,7 +191,9 @@
     refresh();drawList();
   }
   buttons.forEach(button=>button.onclick=()=>select(button));
-  picker.onchange=()=>{group=picker.value;drawList();};
+  picker.onchange=()=>{group=picker.value;el("group-play").disabled=scanning || !group;drawList();};
+  el("group-play").onclick=()=>playTrackQueue(view==="album" ? orderedAlbum(group) : tracks.filter(t=>group && groupOf(t)===group).map(t=>t.id));
+  el("dj-album").onchange=e=>{el("dj-play-album").disabled=scanning || !e.target.value;};
   document.addEventListener("visibilitychange",()=>{if(!document.hidden)refresh();});
   for(const [name,path] of [["gpl","GPL-3.0.txt"],["font","Poppins-OFL.txt"],["icons","Material-Apache-2.0.txt"]]){
     const output=el("license-"+name);
@@ -183,7 +203,7 @@
       catch {output.textContent="Không mở được giấy phép.";}
     });
   }
-  window.velunaLibrary={refresh,rows,record,favoritesChanged,queue:()=>view==="queue",
+  window.velunaLibrary={refresh,rows,record,favoritesChanged,orderedAlbum,prepareAlbums(){albumChoices();scan();},queue:()=>view==="queue",
     newPlay:()=>{ lastStarted=""; },
     empty:()=>el("query").value?"Không tìm thấy bài phù hợp.":view==="favorite"?"Chọn trái tim trên trình phát để lưu bài yêu thích.":view==="recent" || view==="popular"?"Các bài đã phát trên thiết bị sẽ xuất hiện ở đây.":"Chưa có bài trong mục này."};
   refresh();drawList();

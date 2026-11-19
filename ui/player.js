@@ -74,6 +74,12 @@ function loadTrack(id, play, time=0) {
   newSeek=time; audio.src=desktop.convertFileSrc(id); audio.load();
   if (play) audio.play().catch(e=>msg(e.message));
 }
+function playTrackQueue(ids) {
+  if (!ids.length) return;
+  if(native && ids.length>1000){msg("Hàng chờ Android hỗ trợ tối đa 1.000 bài.");return;}
+  albumQueue=ids.slice();
+  if(native)native.playQueue(JSON.stringify(ids));else loadTrack(ids[0],true);
+}
 function skip(step, ended=false) {
   const order=playOrder(), repeat=el("repeat-mode").value;
   if(ended && repeat==="one" && selected){loadTrack(selected,true);return;}

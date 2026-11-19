@@ -15,6 +15,8 @@ pub struct MediaTags {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub album_artist: Option<String>,
+    pub disc: Option<u32>,
+    pub track: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cover: Option<String>,
 }
@@ -23,6 +25,30 @@ impl MediaTags {
     fn merge(&mut self, revision: &MetadataRevision, artwork: bool) {
         for tag in revision.tags() {
             let Some(key) = tag.std_key else { continue };
+            if matches!(
+                key,
+                StandardTagKey::DiscNumber | StandardTagKey::TrackNumber
+            ) {
+                let number = match &tag.value {
+                    Value::String(text) => text
+                        .split('/')
+                        .next()
+                        .and_then(|n| n.trim().parse::<u32>().ok()),
+                    Value::UnsignedInt(n) => u32::try_from(*n).ok(),
+                    Value::SignedInt(n) => u32::try_from(*n).ok(),
+                    _ => None,
+                }
+                .filter(|n| *n > 0);
+                let field = if key == StandardTagKey::DiscNumber {
+                    &mut self.disc
+                } else {
+                    &mut self.track
+                };
+                if field.is_none() {
+                    *field = number;
+                }
+                continue;
+            }
             let field = match key {
                 StandardTagKey::TrackTitle => &mut self.title,
                 StandardTagKey::Artist => &mut self.artist,
@@ -126,6 +152,7 @@ mod tests {
         let mut tags = frame(b"TIT2", b"\x03Night Drive");
         tags.extend(frame(b"TPE1", b"\x03Veluna Band"));
         tags.extend(frame(b"TALB", b"\x03Blue Hours"));
+        tags.extend(frame(b"TRCK", b"\x037/11"));
         tags.extend(frame(
             b"APIC",
             b"\x00image/png\x00\x03\x00\x89PNG\r\n\x1a\nfixture",
@@ -150,6 +177,7 @@ mod tests {
         assert_eq!(with.album.as_deref(), Some("Blue Hours"));
         assert!(with.cover.unwrap().starts_with("data:image/png;base64,"));
         assert!(without.cover.is_none());
+        assert_eq!(with.track, Some(7));
         assert_eq!(without.title, with.title);
     }
 }

@@ -46,7 +46,7 @@
       <div class="heading"><h1 id="library-heading">Thư viện</h1><button id="add">＋ Thêm nhạc</button></div>
       <section id="home-shelves" hidden></section>
       <label class="search">Tìm bài hát<input id="query" type="search" placeholder="Tên bài trong thư viện"></label>
-      <div id="group-picker" hidden><label><span id="group-label"></span> <select id="library-group"></select></label></div>
+      <div id="group-picker" hidden><label><span id="group-label"></span> <select id="library-group"></select></label> <button id="group-play" disabled>Phát tất cả</button></div>
       <div id="list"></div>
       <details id="playlist-panel" class="source-library"><summary>Playlist và yêu thích</summary>
         <form id="playlist-form"><label>Tên playlist <input id="playlist-name" required maxlength="100"></label><button>Tạo playlist</button></form>
@@ -122,6 +122,8 @@
   </dialog>
   <dialog id="dj-dialog" aria-labelledby="dj-title">
     <h2 id="dj-title">DJ</h2>
+    <label>Album trong thư viện <select id="dj-album"><option value="">Chọn album</option></select></label>
+    <button id="dj-play-album" disabled>Áp dụng và phát album</button>
     <button id="dj-folder">Chọn thư mục album</button>
     <label><input id="dj-enabled" type="checkbox"> Chuyển bài tự động</label>
     <label>Phong cách <select id="dj-style"><option value="gentle">Nhẹ nhàng</option><option value="party">Party</option><option value="album">Giữ nguyên album</option></select></label>

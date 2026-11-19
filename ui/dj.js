@@ -142,11 +142,11 @@
     el("dj-enabled").checked=settings.enabled;el("dj-style").value=settings.style;
     el("mix-seconds").value=String(settings.seconds || 0);
     el("dj-provider").value=settings.provider;el("dj-model").value=settings.model;el("dj-limit").value=settings.limit;
-    el("dj-key").value=""; el("dj-ai").hidden=settings.provider==="local";el("dj-dialog").showModal();
+    el("dj-key").value=""; el("dj-ai").hidden=settings.provider==="local";el("dj-dialog").showModal();window.velunaLibrary?.prepareAlbums();
   };
   el("dj-provider").onchange=e=>{el("dj-ai").hidden=e.target.value==="local";el("dj-key").value="";};
   el("dj-forget").onclick=async()=>{try{await window.velunaVault.write("dj-"+el("dj-provider").value,"");el("dj-key").value="";info("Đã xóa key trên thiết bị.");}catch(e){info(String(e));}};
-  el("dj-save").onclick=async()=>{
+  async function applySettings(album){
     try {
       const seconds=Number(el("mix-seconds").value) || 0;
       const provider=el("dj-provider").value,model=el("dj-model").value.trim();
@@ -159,8 +159,15 @@
       localStorage.setItem("dj-settings",JSON.stringify(settings));el("dj-key").value="";
       generation++;pair="";plan=null;stopFade();
       if(native)native.setMix(settings.enabled && settings.style!=="album","","",0,seconds);
-      info("Đã lưu cài đặt DJ.");prepare();el("dj-dialog").close();
+      info("Đã lưu cài đặt DJ.");
+      if(album?.length)playTrackQueue(album);
+      prepare();el("dj-dialog").close();
     } catch(e){info(e.message || String(e));}
+  }
+  el("dj-save").onclick=()=>applySettings();
+  el("dj-play-album").onclick=()=>{
+    const queue=window.velunaLibrary.orderedAlbum(el("dj-album").value);
+    if(queue.length)applySettings(queue);
   };
   el("dj-close").onclick=()=>{el("dj-key").value="";el("dj-dialog").close();};
   el("dj-dialog").addEventListener("close",()=>{el("dj-key").value="";});
