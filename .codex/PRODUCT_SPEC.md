@@ -16,6 +16,8 @@ This document contains two complete versions: **Vietnamese** first and **English
 
 Bản phát triển đã có thư viện local, playlist và yêu thích dùng offline, liên kết Spotify, cửa sổ YouTube, chuyển phiên, điều khiển từ xa, nhận file qua LAN và AutoMix. AI DJ chuẩn bị đặc trưng nhạc trên máy rồi chỉ gọi nhà cung cấp người dùng đã chọn gần cuối bài. Kênh điều khiển dùng tài khoản Veluna và hiện hoạt động khi ứng dụng nhận đang hiển thị. Đã thử giao thức LAN với hai tiến trình trên Windows và kênh điều khiển qua Supabase với hai máy khách thử. Nghiệm thu với điện thoại thật, tài khoản dịch vụ thật, mức dùng pin và toàn bộ các mục dưới đây vẫn đang mở.
 
+Bản phát triển tích hợp tài nguyên SimpMusic 2.6.0 theo GPL-3.0, thư viện theo album/nghệ sĩ, lịch sử phát trên thiết bị, ảnh bìa nhúng, chỉnh thứ tự hàng chờ, lời theo từ với độ trễ riêng từng bài và crossfade cố định 1–30 giây. Các mức dài được giới hạn theo thời lượng bài. Poppins dùng SIL OFL 1.1.
+
 Một sản phẩm có bản Android và Windows, dành cho cá nhân và nhóm nhỏ trước. Lõi logic dùng Rust; cho phép Kotlin và API native ở phần tích hợp hệ thống. Tham khảo SimpMusic để phát triển thư viện, playback và AutoMix.
 
 Toàn bộ tính năng trong tài liệu thuộc phạm vi bản phát hành đầu tiên. Mã thử nghiệm Android và Windows nằm trên nhánh `codex/dev`. Chỉ phát hành bộ cài và mở nút tải khi đã hoàn tất đặc tả, gồm account, handoff và AI DJ.
@@ -184,6 +186,8 @@ Mọi giới hạn dịch vụ và phiên bản API cần kiểm tra lại khi t
 # English
 
 ## 1. Goals and current status
+
+The development build integrates GPL-3.0 resources from SimpMusic 2.6.0, album and artist browsing, device-local listening history, embedded covers, queue reordering, word-timed lyrics with per-track offset and fixed crossfade presets from 1 to 30 seconds. Long fades are bounded by track duration. Poppins is licensed under SIL OFL 1.1.
 
 The development build includes a local library, offline playlists and favorites, Spotify linking, a dedicated YouTube window, playback handoff, remote control, LAN file receipt and AutoMix. AI DJ prepares audio features locally and contacts the selected provider near the end of the track. Remote control uses the Veluna account and currently requires the receiving app to be visible. The LAN protocol was tested between two Windows processes and remote commands were tested through Supabase with two test clients. Acceptance on a physical phone, live provider accounts, battery measurements and the full scope below remains open.
 

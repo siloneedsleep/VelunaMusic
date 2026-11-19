@@ -8,6 +8,8 @@
   <title>VelunaMusic</title>
   <link rel="stylesheet" href="player.css">
   <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="library.css">
+  <script src="lrc.js" defer></script>
   <script src="player.js" defer></script>
   <script src="cloud-config.js" defer></script>
   <script src="vault.js" defer></script>
@@ -18,6 +20,7 @@
   <script src="nearby.js" defer></script>
   <script src="sources.js" defer></script>
   <script src="playlists.js" defer></script>
+  <script src="library.js" defer></script>
   <script src="listening.js" defer></script>
   <script src="sound.js" defer></script>
   <script src="remote.js" defer></script>
@@ -29,9 +32,21 @@
     <nav><button id="nearby">Thiết bị gần</button> <button id="dj">DJ</button> <button id="account">Tài khoản</button> <button id="settings">Cài đặt</button></nav>
   </header>
   <main>
+    <nav class="library-rail" aria-label="Duyệt thư viện">
+      <button data-view="home" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/home.svg)" aria-hidden="true"></i>Trang chủ</button>
+      <button data-view="all" aria-pressed="true"><i class="glyph" style="--glyph:url(simpmusic/library.svg)" aria-hidden="true"></i>Thư viện</button>
+      <button data-view="album" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/album.svg)" aria-hidden="true"></i>Album</button>
+      <button data-view="artist" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/library.svg)" aria-hidden="true"></i>Nghệ sĩ</button>
+      <button data-view="favorite" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/favorite.svg)" aria-hidden="true"></i>Yêu thích</button>
+      <button data-view="recent" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/recent.svg)" aria-hidden="true"></i>Gần đây</button>
+      <button data-view="popular" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/popular.svg)" aria-hidden="true"></i>Nghe nhiều</button>
+      <button data-view="queue" aria-pressed="false"><i class="glyph" style="--glyph:url(simpmusic/queue.svg)" aria-hidden="true"></i>Hàng chờ</button>
+    </nav>
     <section class="collection">
-      <div class="heading"><h1>Thư viện</h1><button id="add">＋ Thêm nhạc</button></div>
+      <div class="heading"><h1 id="library-heading">Thư viện</h1><button id="add">＋ Thêm nhạc</button></div>
+      <section id="home-shelves" hidden></section>
       <label class="search">Tìm bài hát<input id="query" type="search" placeholder="Tên bài trong thư viện"></label>
+      <div id="group-picker" hidden><label><span id="group-label"></span> <select id="library-group"></select></label></div>
       <div id="list"></div>
       <details id="playlist-panel" class="source-library"><summary>Playlist và yêu thích</summary>
         <form id="playlist-form"><label>Tên playlist <input id="playlist-name" required maxlength="100"></label><button>Tạo playlist</button></form>
@@ -52,14 +67,15 @@
     </section>
     <aside>
       <img id="cover" src="icon.png" alt="" width="220" height="220">
-      <p>Đang nghe</p><h2 id="title">Chọn một bài hát</h2>
+      <p>Đang nghe</p><h2 id="title">Chọn một bài hát</h2><div id="now-artist"></div>
       <input id="seek" aria-label="Vị trí phát" type="range" min="0" max="0" value="0">
       <div class="time"><span id="elapsed">0:00</span><span id="duration">0:00</span></div>
       <div class="transport">
-        <button id="prev" aria-label="Bài trước">⏮</button>
-        <button id="play" aria-label="Phát hoặc tạm dừng">▶</button>
-        <button id="next" aria-label="Bài kế">⏭</button>
+        <button id="prev" aria-label="Bài trước"></button>
+        <button id="play" aria-label="Phát hoặc tạm dừng"></button>
+        <button id="next" aria-label="Bài kế"></button>
       </div>
+      <div class="track-tools"><button id="now-favorite" disabled aria-pressed="false">Yêu thích</button> <button id="open-lyrics">Lời bài hát</button></div>
       <div id="window-tools" hidden><button id="mini-player">Thu gọn</button><button id="tray-player">Ẩn xuống khay</button></div>
       <details class="listening"><summary>Tùy chọn phát và lời bài hát</summary>
         <label>Lặp <select id="repeat-mode"><option value="off">Tắt</option><option value="all">Hàng chờ</option><option value="one">Một bài</option></select></label>
@@ -68,12 +84,19 @@
         <label>Hẹn giờ ngủ <select id="sleep-minutes"><option value="0">Tắt</option><option>5</option><option>15</option><option>30</option><option>45</option><option>60</option></select> phút</label>
         <span id="sleep-status" role="status"></span>
         <label>Lời cho bài đang chọn <input id="lyrics-file" type="file" accept=".lrc,.txt,text/plain"></label>
-        <button id="lyrics-clear">Xóa lời đã lưu</button><div id="lyrics-lines" aria-label="Lời bài hát"></div>
+        <button id="lyrics-clear">Xóa lời đã lưu</button>
+        <div id="lyrics-reader"><div class="lyric-toolbar">
+          <button id="lyrics-earlier" aria-label="Hiện lời sớm hơn 100 mili giây">−</button>
+          <output id="lyrics-offset" aria-live="polite">0 ms</output>
+          <button id="lyrics-later" aria-label="Hiện lời muộn hơn 100 mili giây">+</button>
+          <button id="lyrics-reset">Đặt lại</button><button id="lyrics-expand">Mở rộng</button>
+        </div><div id="lyrics-lines" aria-label="Lời bài hát"></div></div>
       </details>
     </aside>
   </main>
   <p role="status" id="message"></p>
   <div id="nearby-drop" hidden>Thả bài để gửi sang PC</div>
+  <dialog id="lyrics-dialog" aria-labelledby="lyrics-title"><h2 id="lyrics-title">Lời bài hát</h2><button id="lyrics-close">Đóng</button></dialog>
   <dialog id="nearby-dialog" aria-labelledby="nearby-title">
     <h2 id="nearby-title">Thiết bị gần đây</h2>
     <section id="nearby-pc" hidden>
@@ -102,6 +125,7 @@
     <button id="dj-folder">Chọn thư mục album</button>
     <label><input id="dj-enabled" type="checkbox"> Chuyển bài tự động</label>
     <label>Phong cách <select id="dj-style"><option value="gentle">Nhẹ nhàng</option><option value="party">Party</option><option value="album">Giữ nguyên album</option></select></label>
+    <label>Thời gian chuyển bài <select id="mix-seconds"><option value="0">Tự động</option><option value="1">1 giây</option><option value="2">2 giây</option><option value="3">3 giây</option><option value="5">5 giây</option><option value="8">8 giây</option><option value="10">10 giây</option><option value="12">12 giây</option><option value="15">15 giây</option><option value="20">20 giây</option><option value="30">30 giây</option></select></label>
     <label>Lên kế hoạch bằng <select id="dj-provider"><option value="local">AutoMix trên máy</option><option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option></select></label>
     <fieldset id="dj-ai" hidden><legend>AI DJ</legend>
       <label>Model <input id="dj-model" placeholder="ID model của nhà cung cấp" maxlength="126"></label>
@@ -171,7 +195,7 @@
     </details>
     <label>Áp dụng cho <select id="glass-scope">
       <option value="app">Toàn ứng dụng</option><option value="header">Thanh điều hướng</option>
-      <option value="library">Thư viện</option><option value="player">Trình phát</option>
+      <option value="library">Thư viện</option><option value="rail">Thanh thư viện</option><option value="player">Trình phát</option>
       <option value="dialog">Cửa sổ bật lên</option><option value="button">Nút</option>
       <option value="input">Ô nhập và thanh trượt</option><option value="track">Hàng bài hát</option>
       <option value="lyrics">Lời bài hát</option><option value="drop">Ô nhận bài</option><option value="playlist">Playlist</option>
@@ -196,6 +220,11 @@
     <label>Ảnh nền <input id="background" type="file" accept="image/*"></label>
     <details><summary>Xuất hoặc nhập giao diện</summary><label>Dữ liệu giao diện <textarea id="theme-data" rows="4"></textarea></label>
       <button id="theme-export">Xuất để sao chép</button><button id="theme-import">Áp dụng dữ liệu đã dán</button><p id="theme-data-status" role="status"></p></details>
+    <details><summary>Giấy phép và tác giả</summary><p>VelunaMusic dùng GPL-3.0. Giao diện và bộ đọc lời có phần chuyển từ SimpMusic 2.6.0 của maxrave-dev và các tác giả đóng góp. Phông Poppins dùng SIL Open Font License.</p>
+      <details><summary>GPL-3.0</summary><pre id="license-gpl"></pre></details>
+      <details><summary>Material Icons · Apache 2.0</summary><pre id="license-icons"></pre></details>
+      <details><summary>Poppins · OFL 1.1</summary><pre id="license-font"></pre></details>
+    </details>
     <button id="reset">Xóa ảnh nền</button><button id="check">Kiểm tra cập nhật</button><button id="done">Xong</button>
   </dialog>
   <dialog id="upgrade" aria-labelledby="upgrade-title">

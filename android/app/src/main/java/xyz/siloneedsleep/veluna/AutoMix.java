@@ -11,6 +11,8 @@ import androidx.media3.common.Player;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.session.MediaSession;
 import java.util.ArrayList;
+import org.json.JSONObject;
+import org.json.JSONException;
 
 final class AutoMix implements Player.Listener, SharedPreferences.OnSharedPreferenceChangeListener {
     private final PlaybackService service;
@@ -22,6 +24,28 @@ final class AutoMix implements Player.Listener, SharedPreferences.OnSharedPrefer
     private long width, started;
     private int sourceIndex;
     private float volume;
+    private String countedId = "";
+    private void recordStart(Player player) {
+        MediaItem item = player.getCurrentMediaItem();
+        if (!player.isPlaying() || item == null || item.mediaId.equals(countedId)) return;
+        countedId = item.mediaId;
+        SharedPreferences store = service.getSharedPreferences("player", 0);
+        try {
+            JSONObject history = new JSONObject(store.getString("play-history", "{}"));
+            JSONObject previous = history.optJSONObject(countedId);
+            history.put(countedId, new JSONObject().put("count",previous == null ? 1 : previous.optLong("count")+1)
+                .put("time",System.currentTimeMillis()));
+            if (history.length()>5000) {
+                long oldest=Long.MAX_VALUE; String remove=null;
+                for (java.util.Iterator<String> keys=history.keys();keys.hasNext();) {
+                    String key=keys.next(); long time=history.getJSONObject(key).optLong("time");
+                    if (time<oldest) {oldest=time;remove=key;}
+                }
+                if (remove!=null) history.remove(remove);
+            }
+            store.edit().putString("play-history",history.toString()).apply();
+        } catch (JSONException ignored) {}
+    }
     private final Runnable prepare = this::prepareNext;
     private final Runnable ramp = this::fade;
     AutoMix(PlaybackService service, MediaSession session, ExoPlayer main) {
@@ -39,8 +63,9 @@ final class AutoMix implements Player.Listener, SharedPreferences.OnSharedPrefer
         if (!prefs.getBoolean("enabled",false) || current==null || next==C.INDEX_UNSET || main.getRepeatMode()==Player.REPEAT_MODE_ONE) return 0;
         boolean planned=current.mediaId.equals(prefs.getString("from","")) &&
             main.getMediaItemAt(next).mediaId.equals(prefs.getString("to",""));
-        long ms=planned ? prefs.getLong("width",2000) : 2000;
-        return Math.min(Math.min(Math.max(0,ms),12000),Math.max(0,main.getDuration()/3));
+        int fixed=prefs.getInt("fixed",0);
+        long ms=planned ? prefs.getLong("width",2000) : fixed>0 ? fixed*1000L : 2000;
+        return Math.min(Math.min(Math.max(0,ms),30000),Math.max(0,main.getDuration()/3));
     }
     private void schedule() {
         handler.removeCallbacks(prepare);
@@ -68,7 +93,12 @@ final class AutoMix implements Player.Listener, SharedPreferences.OnSharedPrefer
         if (incoming.getPlayerError()!=null || incoming.getPlaybackState()==Player.STATE_ENDED) {cancelFade();return;}
         if (incoming.getPlaybackState()!=Player.STATE_READY) {handler.postDelayed(ramp,60);return;}
         if (started==0) {
-            started=SystemClock.elapsedRealtime(); width=Math.max(100,Math.min(width,main.getDuration()-main.getCurrentPosition()-120));
+            long remaining=main.getDuration()-main.getCurrentPosition();
+            long nextDuration=incoming.getDuration();
+            if(nextDuration>0)width=Math.min(width,nextDuration/3);
+            if(width<100 || remaining<120){cancelFade();return;}
+            if(remaining>width+120){handler.postDelayed(ramp,remaining-width);return;}
+            started=SystemClock.elapsedRealtime(); width=Math.max(100,Math.min(width,remaining-120));
             incoming.play();
         }
         float progress=Math.min(1f,(float)(SystemClock.elapsedRealtime()-started)/width);
@@ -78,13 +108,15 @@ final class AutoMix implements Player.Listener, SharedPreferences.OnSharedPrefer
         main=incoming; incoming=null;
         mainEq.close();mainEq=incomingEq;incomingEq=null;
         main.setAudioAttributes(attributes(),true); main.setVolume(volume);
-        session.setPlayer(main); old.release(); main.addListener(this); schedule();
+        session.setPlayer(main); old.release(); main.addListener(this); countedId=""; recordStart(main); schedule();
     }
     private void cancelFade() {
         handler.removeCallbacks(ramp);
         if (incoming!=null) {incomingEq.close();incomingEq=null;incoming.release(); incoming=null; main.setVolume(volume);}
     }
     @Override public void onEvents(Player p,Player.Events events) {
+        if(events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION)) countedId="";
+        recordStart(p);
         if(events.containsAny(Player.EVENT_MEDIA_METADATA_CHANGED,Player.EVENT_IS_PLAYING_CHANGED,Player.EVENT_MEDIA_ITEM_TRANSITION))
             PlayerWidget.display(service,p);
         if (events.containsAny(Player.EVENT_TIMELINE_CHANGED,Player.EVENT_POSITION_DISCONTINUITY,

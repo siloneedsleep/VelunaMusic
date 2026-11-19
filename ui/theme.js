@@ -2,7 +2,7 @@
   const defaults={tint:"#19374f",text:"#ecf6ff",opacity:78,blur:12,border:24,radius:16,highlight:8,shadow:18};
   const seed={app:defaults,header:{opacity:42},track:{opacity:0,border:10,blur:0,radius:9},button:{opacity:80,radius:10,blur:0},input:{opacity:70,blur:0,radius:8}};
   const presets={clear:{opacity:22,blur:4,border:35},frost:{opacity:65,blur:20,border:34},dark:{tint:"#0d1d30",opacity:90,blur:10,border:20},solid:{opacity:100,blur:0,border:16}};
-  const selectors={app:"body",header:"header",library:".collection",player:"aside",dialog:"dialog",button:"button:not(.row)",input:"input,select,textarea",track:".row",lyrics:"#lyrics-lines",drop:"#nearby-drop",playlist:"#playlist-panel",notice:"#upgrade",transport:".transport button"};
+  const selectors={app:"body",header:"header",library:".collection",rail:".library-rail",player:"aside",dialog:"dialog",button:"button:not(.row)",input:"input,select,textarea",track:".row",lyrics:"#lyrics-lines",drop:"#nearby-drop",playlist:"#playlist-panel",notice:"#upgrade",transport:".transport button"};
   const fields=Object.keys(defaults), history=[], future=[];
   const upper={opacity:100,blur:30,border:100,radius:42,highlight:100,shadow:100};
   const clone=x=>JSON.parse(JSON.stringify(x));

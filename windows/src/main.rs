@@ -49,6 +49,25 @@ fn library(app: tauri::AppHandle) -> Result<Vec<Track>, String> {
         .collect())
 }
 #[tauri::command]
+async fn media_tags(
+    app: tauri::AppHandle,
+    id: String,
+    artwork: bool,
+) -> Result<veluna_core::media::MediaTags, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let index = library_path(&app)?;
+        let paths: Vec<String> =
+            serde_json::from_slice(&std::fs::read(index).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        if !paths.contains(&id) {
+            return Err("Track is missing from this library".into());
+        }
+        veluna_core::media::read(std::fs::File::open(id).map_err(|e| e.to_string())?, artwork)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
 async fn analyze_audio(
     app: tauri::AppHandle,
     id: String,
@@ -400,6 +419,7 @@ fn main() {
                 hide_to_tray,
                 spotify_callback,
                 analyze_audio,
+                media_tags,
                 vault::read_secret,
                 vault::write_secret,
                 check_update,

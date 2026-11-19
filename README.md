@@ -15,3 +15,7 @@ node --test tests/*.test.mjs
 ```
 
 The Android app uses Media3 for background playback and the system document picker for local tracks. The CI workflow builds the Rust shared libraries for each Android ABI before Gradle packages the app. It also compiles the Windows player. Builds on the development branch do not publish an installer or create a GitHub Release.
+
+## License
+
+VelunaMusic is licensed under [GPL-3.0](LICENSE). The [third-party notices](THIRD_PARTY.md) identify the SimpMusic adaptations and the Poppins font license.

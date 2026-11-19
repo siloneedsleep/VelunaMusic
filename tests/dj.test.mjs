@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import vm from "node:vm";
 import {readFile} from "node:fs/promises";
 const code=await readFile(new URL("../ui/dj.js",import.meta.url),"utf8");
-function player({failure=false,album=false}={}) {
+function player({failure=false,album=false,seconds=0}={}) {
   const elements=new Map(), plans=[], requests=[];
   const el=id=>{if(!elements.has(id))elements.set(id,{addEventListener(){}});return elements.get(id);};
-  const settings={enabled:true,style:album?"album":"party",provider:"openai",model:"fixture",limit:1};
+  const settings={enabled:true,style:album?"album":"party",provider:"openai",model:"fixture",limit:1,seconds};
   const localFiles=["private/path/a","private/path/b","private/path/c"];
   const spectrum={duration:120,intro:{bpm:120,confidence:.8,rms:.2},outro:{bpm:120,confidence:.7,rms:.21}};
   const window={velunaVault:{read:async()=>"fake-test-key"}};
@@ -35,4 +35,11 @@ test("invalid model choice falls back and album mode has zero overlap",async()=>
   await failed.window.velunaDJ.nearingEnd(100,120,true);
   assert.match(failed.el("dj-status").textContent,/AutoMix/);
   assert.equal(failed.plans.at(-1)[3],4000);assert.equal(album.plans.at(-1)[3],0);assert.equal(album.requests.length,0);
+});
+
+test("fixed overlap reaches the native mixer and skips remote planning",async()=>{
+  const p=player({seconds:30});await new Promise(resolve=>setImmediate(resolve));
+  await p.window.velunaDJ.nearingEnd(100,120,true);
+  assert.deepEqual(p.plans.at(-1),[true,p.localFiles[0],p.localFiles[1],30000,30]);
+  assert.equal(p.requests.length,0);
 });

@@ -3,11 +3,11 @@
     openai:"https://api.openai.com/v1/chat/completions",
     openrouter:"https://openrouter.ai/api/v1/chat/completions"
   };
-  const defaults = {enabled:false,style:"gentle",provider:"local",model:"",limit:10};
+  const defaults = {enabled:false,style:"gentle",provider:"local",model:"",limit:10,seconds:0};
   let settings = {...defaults};
   try { Object.assign(settings, JSON.parse(localStorage.getItem("dj-settings") || "{}")); } catch {}
   let pair = "", plan = null, generation = 0, used = 0, fading = null, timer = 0;
-  let upcoming = null;
+  let upcoming = null, preload = null;
   const measurements = new Map();
   const info = text => { el("dj-status").textContent = text; };
   const nextId = () => { const order=playOrder(), i=order.indexOf(selected), repeat=el("repeat-mode").value;
@@ -31,12 +31,12 @@
     return measurements.get(id);
   }
   function setPlan(from,to,ms,method) {
-    plan = {from,to,ms}; if(native) native.setMix(settings.enabled && settings.style!=="album",from,to,ms);
+    plan = {from,to,ms}; if(native) native.setMix(settings.enabled && settings.style!=="album",from,to,ms,Number(settings.seconds)||0);
     info(method+" · "+(ms/1000).toFixed(1)+" giây");
   }
   async function prepare() {
     const from=selected, to=nextId();
-    const key=JSON.stringify([from,to,settings.style,settings.provider,settings.model]);
+    const key=JSON.stringify([from,to,settings.style,settings.provider,settings.model,settings.seconds]);
     if (!settings.enabled || !from || !to) {
       if(pair){pair="";plan=null;++generation;}
       return;
@@ -44,9 +44,10 @@
     if(key===pair) return;
     pair=key; upcoming=null; const turn=++generation;
     const fresh=()=>turn===generation && pair===key && settings.enabled;
-    const basic=settings.style==="album"?0:2000;
-    setPlan(from,to,basic,"AutoMix trên máy");
-    if(!basic) return;
+    const manual=Number(settings.seconds) || 0;
+    const basic=settings.style==="album"?0:(manual || 2)*1000;
+    setPlan(from,to,basic,manual?"Chuyển bài cố định":"AutoMix trên máy");
+    if(!basic || manual) return;
     try {
       const [a,b]=await Promise.all([measure(from),measure(to)]);
       if(!fresh() || fading) return;
@@ -77,6 +78,7 @@
   }
   function stopFade() {
     clearInterval(timer);
+    if(preload){const held=preload.audio;preload=null;held.removeAttribute("src");held.load();}
     if(!fading) return;
     const {incoming,outgoing,volume}=fading; fading=null;
     window.velunaSound?.detach(incoming);
@@ -97,10 +99,17 @@
     const duration=Math.min(plan.ms/1000,audio.duration/3);
     const remaining=audio.duration-audio.currentTime;
     if(remaining>duration || remaining<=0.08)return;
-    const incoming=new Audio(); const outgoing=audio;
-    incoming.crossOrigin="anonymous";window.velunaSound?.attach(incoming);
+    if(preload?.id!==plan.to){
+      if(preload){preload.audio.removeAttribute("src");preload.audio.load();}
+      const preview=new Audio();preview.crossOrigin="anonymous";preview.preload="metadata";
+      preload={id:plan.to,audio:preview};preview.src=desktop.convertFileSrc(plan.to);
+    }
+    const incoming=preload.audio, outgoing=audio;
+    if(incoming.error){stopFade();plan=null;return;}
+    if(!Number.isFinite(incoming.duration) || remaining>incoming.duration/3)return;
+    preload=null;window.velunaSound?.attach(incoming);
     const transition={outgoing,incoming,to:plan.to,volume:outgoing.volume,started:false};
-    fading=transition; incoming.volume=0; incoming.src=desktop.convertFileSrc(plan.to);
+    fading=transition; incoming.volume=0;
     try {
       await incoming.play(); if(fading!==transition)return;
       transition.started=true;const start=outgoing.currentTime,span=Math.max(.01,outgoing.duration-start);
@@ -131,6 +140,7 @@
   };
   el("dj").onclick=()=>{
     el("dj-enabled").checked=settings.enabled;el("dj-style").value=settings.style;
+    el("mix-seconds").value=String(settings.seconds || 0);
     el("dj-provider").value=settings.provider;el("dj-model").value=settings.model;el("dj-limit").value=settings.limit;
     el("dj-key").value=""; el("dj-ai").hidden=settings.provider==="local";el("dj-dialog").showModal();
   };
@@ -138,16 +148,17 @@
   el("dj-forget").onclick=async()=>{try{await window.velunaVault.write("dj-"+el("dj-provider").value,"");el("dj-key").value="";info("Đã xóa key trên thiết bị.");}catch(e){info(String(e));}};
   el("dj-save").onclick=async()=>{
     try {
+      const seconds=Number(el("mix-seconds").value) || 0;
       const provider=el("dj-provider").value,model=el("dj-model").value.trim();
-      if(provider!=="local" && !model) throw Error("Nhập ID model của nhà cung cấp.");
+      if(!seconds && provider!=="local" && !model) throw Error("Nhập ID model của nhà cung cấp.");
       const key=el("dj-key").value.trim();
       if(provider!=="local" && key) await window.velunaVault.write("dj-"+provider,key);
-      if(provider!=="local" && !await window.velunaVault.read("dj-"+provider)) throw Error("Nhập API key để bật AI DJ.");
-      settings={enabled:el("dj-enabled").checked,style:el("dj-style").value,provider,model,
+      if(!seconds && provider!=="local" && !await window.velunaVault.read("dj-"+provider)) throw Error("Nhập API key để bật AI DJ.");
+      settings={enabled:el("dj-enabled").checked,style:el("dj-style").value,provider,model,seconds,
         limit:Math.min(100,Math.max(1,Math.floor(Number(el("dj-limit").value)||10)))};
       localStorage.setItem("dj-settings",JSON.stringify(settings));el("dj-key").value="";
       generation++;pair="";plan=null;stopFade();
-      if(native)native.setMix(settings.enabled && settings.style!=="album","","",0);
+      if(native)native.setMix(settings.enabled && settings.style!=="album","","",0,seconds);
       info("Đã lưu cài đặt DJ.");prepare();el("dj-dialog").close();
     } catch(e){info(e.message || String(e));}
   };

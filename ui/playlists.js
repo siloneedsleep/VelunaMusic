@@ -46,6 +46,7 @@ function playlistLibrary(request) {
       list.append(li);
     }
     el("playlist-conflict").hidden = !currentDoc?.conflict;
+    window.velunaLibrary?.favoritesChanged();
   }
   function fromServer(row) {
     const p=row.payload;
@@ -148,5 +149,22 @@ function playlistLibrary(request) {
   window.addEventListener("online",sync);
   window.addEventListener("veluna-library",()=>{if(panel.open)render();});
   document.addEventListener("visibilitychange",()=>{if(!document.hidden && owner)sync();});
+  window.velunaFavorites = {
+    ids() {
+      const items=documents.find(doc=>doc.id===favoriteId)?.payload.items || [];
+      return new Set(items.map(item=>localStorage.getItem("veluna-file/"+item.digest)).filter(Boolean));
+    },
+    async toggle(track) {
+      const run=generation, doc=documents.find(item=>item.id===favoriteId);
+      if(!doc || !track)return;
+      const digest=await inspectTrack(track.id);
+      if(run!==generation)return;
+      const items=doc.payload.items;
+      const exists=items.some(item=>item.digest===digest);
+      if(!exists && items.length>=1000)throw Error("Danh sách yêu thích đã đủ 1.000 bài.");
+      localStorage.setItem("veluna-file/"+digest,track.id);
+      change(doc,exists?items.filter(item=>item.digest!==digest):[...items,{digest,title:track.title.slice(0,160)}]);
+    }
+  };
   account(null);return {account};
 }

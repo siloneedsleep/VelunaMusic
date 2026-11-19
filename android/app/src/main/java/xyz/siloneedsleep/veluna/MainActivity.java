@@ -25,6 +25,7 @@ public final class MainActivity extends Activity {
     static { System.loadLibrary("veluna_core"); }
     static native boolean newerRelease(String installed, String tag);
     static native String analyzeAudio(int fd);
+    static native String readMediaTags(int fd, boolean artwork);
     private final ArrayList<MediaItem> library = new ArrayList<>();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService network = Executors.newSingleThreadExecutor();
@@ -340,16 +341,22 @@ public final class MainActivity extends Activity {
             if(allowed)runOnUiThread(()->{try{startActivity(new Intent(Intent.ACTION_VIEW,uri));}catch(ActivityNotFoundException e){message("Thiết bị thiếu trình duyệt để mở Spotify.");}});
         }
         @JavascriptInterface public void pickAlbum() { runOnUiThread(()->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE),13)); }
-        @JavascriptInterface public void setMix(boolean enabled, String from, String to, int ms) {
+        @JavascriptInterface public void setMix(boolean enabled, String from, String to, int ms, int fixedSeconds) {
             getSharedPreferences("dj", 0).edit().putBoolean("enabled",enabled)
-                .putString("from",from).putString("to",to).putLong("width",Math.max(0,Math.min(12000,ms))).apply();
+                .putString("from",from).putString("to",to).putInt("fixed", Math.max(0,Math.min(30,fixedSeconds))).putLong("width",Math.max(0,Math.min(30000,ms))).apply();
         }
-        @JavascriptInterface public void analyzeTrack(String ticket, String id) { runOnUiThread(() -> {
+        @JavascriptInterface public String playHistory() {
+            return getSharedPreferences("player",0).getString("play-history","{}");
+        }
+        @JavascriptInterface public void readTags(String ticket, String id) { readAudio(ticket,id,false,false); }
+        @JavascriptInterface public void readCover(String ticket, String id) { readAudio(ticket,id,false,true); }
+        @JavascriptInterface public void analyzeTrack(String ticket, String id) { readAudio(ticket,id,true,false); }
+        private void readAudio(String ticket, String id, boolean analyze, boolean artwork) { runOnUiThread(() -> {
             if (index(id) < 0) { call("onVelunaTransferReply", ticket, "", "Thiếu file nhạc."); return; }
             network.execute(() -> {
                 try (ParcelFileDescriptor descriptor = getContentResolver().openFileDescriptor(Uri.parse(id), "r")) {
                     if (descriptor == null) throw new IOException();
-                    String result = analyzeAudio(descriptor.detachFd());
+                    String result = analyze ? analyzeAudio(descriptor.detachFd()) : readMediaTags(descriptor.detachFd(), artwork);
                     if (result == null) throw new IOException();
                     JSONObject analysis = new JSONObject(result);
                     runOnUiThread(() -> call("onVelunaTransferReply", ticket, analysis, ""));

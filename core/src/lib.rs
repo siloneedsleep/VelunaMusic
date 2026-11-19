@@ -1,5 +1,6 @@
 use semver::Version;
 pub mod dj;
+pub mod media;
 
 /// Only offer stable releases newer than the installed build.
 pub fn newer_release(installed: &str, tag: &str) -> bool {

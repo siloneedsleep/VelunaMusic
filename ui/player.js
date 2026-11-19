@@ -11,25 +11,44 @@ let tracks = [], selected = "", pendingUpdate = "", newSeek = null;
 const msg = text => { el("message").textContent = text; };
 const fmt = s => Number.isFinite(s) ? Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0") : "0:00";
 const saved = () => { try {return JSON.parse(localStorage.getItem("session")) || {};} catch {return {};} };
-function draw() {
+function drawList() {
   const fragment = document.createDocumentFragment();
   const query = el("query").value.toLocaleLowerCase();
-  for (const track of tracks.filter(t => t.title.toLocaleLowerCase().includes(query))) {
+  for (const track of (window.velunaLibrary?.rows(query) ?? tracks.filter(t => t.title.toLocaleLowerCase().includes(query)))) {
     const row = document.createElement("button");
     row.className="row"; row.setAttribute("aria-current", String(track.id === selected));
-    row.textContent=track.title; row.dataset.trackId=track.id; row.onclick=() => loadTrack(track.id, true);
+    row.textContent=track.title; row.setAttribute("aria-label",track.title);
+    if(track.subtitle){const detail=document.createElement("small");detail.textContent=track.subtitle;row.append(detail);}
+    row.dataset.trackId=track.id; row.onclick=() => loadTrack(track.id, true);
     if(native) {
       const handle=document.createElement("span");
       handle.className="track-drag";handle.title="Giữ và kéo sang PC";handle.textContent="⠿";
       row.append(handle);
     }
-    fragment.append(row);
+    if(window.velunaLibrary?.queue()){
+      const item=document.createElement("div"); item.className="queue-item"; item.append(row);
+      const order=playOrder(), index=track.queueIndex;
+      for(const [step,text] of [[-1,"↑"],[1,"↓"]]){
+        const target=index+step, button=document.createElement("button");
+        button.type="button";button.textContent=text;button.disabled=target<0 || target>=order.length;
+        button.setAttribute("aria-label",(step<0?"Đưa lên: ":"Đưa xuống: ")+track.title);
+        button.onclick=()=>{const next=order.slice();[next[index],next[target]]=[next[target],next[index]];
+          albumQueue=next;if(native)native.reorderQueue(JSON.stringify(next));else savePosition();
+          window.velunaDJ?.stopFade();window.velunaDJ?.prepare();drawList();
+          const rows=Array.from(el("list").querySelectorAll(".row"));rows.find(r=>r.dataset.trackId===track.id)?.focus();};
+        item.append(button);
+      }
+      fragment.append(item);
+    } else fragment.append(row);
   }
   if (!fragment.childNodes.length) {
-    const p=document.createElement("p"); p.textContent = tracks.length ? "Không tìm thấy bài phù hợp." : "Thêm file nhạc từ thiết bị để bắt đầu nghe."; fragment.append(p);
+    const p=document.createElement("p"); p.textContent = tracks.length ? (window.velunaLibrary?.empty() || "Không tìm thấy bài phù hợp.") : "Thêm file nhạc từ thiết bị để bắt đầu nghe."; fragment.append(p);
   }
   el("list").replaceChildren(fragment);
+}
+function draw() {
   el("title").textContent=tracks.find(t => t.id === selected)?.title || "Chọn một bài hát";
+  window.velunaLibrary?.refresh(); drawList();
   window.dispatchEvent(new Event("veluna-library"));
 }
 function position(time, duration, playing) {
@@ -40,13 +59,15 @@ function position(time, duration, playing) {
   el("seek").max=Number.isFinite(duration) ? duration : 0;
   if (document.activeElement !== el("seek")) el("seek").value = time || 0;
   el("elapsed").textContent=fmt(time); el("duration").textContent=fmt(duration);
-  el("play").textContent=playing ? "Ⅱ" : "▶";
+  el("play").setAttribute("aria-label", playing ? "Tạm dừng" : "Phát");
+  if(playing && !native)window.velunaLibrary?.record(selected);
 }
-function savePosition() { if (!native && selected) localStorage.setItem("session", JSON.stringify({id:selected,time:audio.currentTime || 0,queue:albumQueue})); }
+function savePosition() { if (!native && (selected || albumQueue.length)) localStorage.setItem("session", JSON.stringify({id:selected,time:audio.currentTime || 0,queue:albumQueue})); }
 function loadTrack(id, play, time=0) {
   if (!tracks.some(t=>t.id===id)) return;
   window.velunaDJ?.stopFade();
   if (albumQueue.length && !albumQueue.includes(id)) albumQueue=[];
+  if(play)window.velunaLibrary?.newPlay();
   selected=id; draw(); window.velunaDJ?.prepare();
   if (native) {native.select(id,play,Math.floor(time*1000)); return;}
   if (!desktop) return;
@@ -88,10 +109,14 @@ el("install").onclick=async()=>{
 };
 el("later").onclick=()=>el("upgrade").close();
 el("add").onclick=async()=>{if(native){native.pick();return;}el("add").disabled=true;try{tracks=await desktop.invoke("add_music");draw();}catch(e){msg(String(e));}finally{el("add").disabled=false;}};
-el("query").oninput=draw;
+el("query").oninput=drawList;
 el("prev").onclick=()=>skip(-1);el("next").onclick=()=>skip(1);
 el("play").onclick=()=>{if(!selected) {if(tracks[0]) loadTrack(tracks[0].id,true);return;}if(native) native.toggle();else if(audio.paused) audio.play().catch(e=>msg(e.message));else audio.pause();};
-el("seek").onchange=e=>{window.velunaDJ?.stopFade();const t=+e.target.value;if(native)native.seek(Math.round(t*1000));else if(audio.src)audio.currentTime=t;};
+function seekTo(time) {
+  window.velunaDJ?.stopFade();
+  if(native)native.seek(Math.round(time*1000));else if(audio.src)audio.currentTime=time;
+}
+el("seek").onchange=e=>seekTo(Number(e.target.value));
 function bindAudio(player) {
   player.onloadedmetadata=()=>{if(newSeek!==null && Number.isFinite(player.duration))player.currentTime=Math.min(newSeek,player.duration);newSeek=null;};
   player.ontimeupdate=()=>{if(!document.hidden)position(player.currentTime,player.duration,!player.paused);

@@ -1,18 +1,5 @@
 "use strict";
 
-function parseLyrics(text) {
-  const lines=[], offset=Number(text.match(/^\[offset:([+-]?\d+)\]/im)?.[1] || 0)/1000;
-  for(const line of text.replace(/^\uFEFF/,"").split(/\r?\n/)) {
-    const pattern=/\[(\d{1,3}):([0-5]\d)(?:[.:](\d{1,3}))?\]/g;
-    const times=Array.from(line.matchAll(pattern));
-    if(!times.length)continue;
-    const words=line.replace(pattern,"").trim();
-    for(const t of times)lines.push({time:Math.max(0,60*Number(t[1])+Number(t[2])+Number("0."+(t[3] || 0))-offset),words});
-  }
-  if(lines.length)return lines.sort((a,b)=>a.time-b.time);
-  return text.trim().split(/\r?\n/).map(words=>({time:null,words}));
-}
-
 (() => {
   const repeat=el("repeat-mode"), minutes=el("sleep-minutes"), lyrics=el("lyrics-lines");
   const panel=lyrics.closest("details");
@@ -28,7 +15,7 @@ function parseLyrics(text) {
     if(start>=0)order.splice(start,1);
     for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];}
     if(start>=0)order.unshift(selected);
-    albumQueue=order;if(native)native.reorderQueue(JSON.stringify(order));else savePosition();
+    albumQueue=order;if(native)native.reorderQueue(JSON.stringify(order));else savePosition();drawList();
     window.velunaDJ?.stopFade();window.velunaDJ?.prepare();msg("Đã trộn hàng chờ.");
   };
   function planSleep(deadline,changed) {
@@ -49,34 +36,75 @@ function parseLyrics(text) {
     minutes.value=String([5,15,30,45,60].find(m=>m>=remaining)||60);
   }
   planSleep(saved,false);
+  const dialog=el("lyrics-dialog"), reader=el("lyrics-reader");
+  let activeWord=-1, delay=0, wake=0, clockTime=0, clockAt=0, advancing=false;
+  function visible(){return !document.hidden && (panel.open || dialog.open);}
+  function currentTime(){return clockTime+(advancing ? (performance.now()-clockAt)/1000 : 0);}
+  function setOffset(value,save) {
+    delay=Math.max(-30000,Math.min(30000,Number(value) || 0));
+    el("lyrics-offset").textContent=(delay>0?"+":"")+delay+" ms";
+    if(save && selected){try{localStorage.setItem("lyrics-offset/"+selected,String(delay));}catch{msg("Không lưu được độ trễ của lời.");}}
+  }
   function render() {
-    if(!panel.open || shown===selected)return;
-    shown=selected;highlighted=-1;lyrics.replaceChildren();
+    if(!visible() || shown===selected)return;
+    shown=selected;highlighted=activeWord=-1;lyrics.replaceChildren();
     const raw=selected && localStorage.getItem("lyrics/"+selected);
     entries=raw?parseLyrics(raw):[];
+    setOffset(selected && localStorage.getItem("lyrics-offset/"+selected),false);
     const fragment=document.createDocumentFragment();
-    for(const entry of entries){const line=document.createElement("p");line.textContent=entry.words;fragment.append(line);}
-    lyrics.append(fragment);
+    for(const entry of entries){
+      const line=document.createElement("p");
+      if(entry.time===null)line.textContent=entry.words;
+      else{
+        const jump=document.createElement("button");jump.type="button";jump.className="lyric-line";
+        if(entry.parts.length)for(const part of entry.parts){const word=document.createElement("span");word.textContent=part.text;jump.append(word);}
+        else jump.textContent=entry.words;
+        jump.onclick=()=>seekTo(Math.max(0,entry.time+delay/1000));line.append(jump);
+      }
+      fragment.append(line);
+    }
+    if(!entries.length){const empty=document.createElement("p");empty.textContent=selected?"Chọn file .lrc hoặc .txt để thêm lời cho bài này.":"Chọn một bài để xem lời.";fragment.append(empty);}
+    lyrics.append(fragment);el("lyrics-title").textContent=el("title").textContent;
   }
-  function progress(time){
-    if(document.hidden || !panel.open)return;
+  function progress(time) {
+    clearTimeout(wake);
+    if(!visible())return;
     render();if(!entries.length || entries[0].time===null)return;
-    let low=0,high=entries.length;
-    while(low<high){const mid=(low+high)>>>1;if(entries[mid].time<=time)low=mid+1;else high=mid;}
-    const index=low-1;if(index===highlighted)return;
-    lyrics.children[highlighted]?.removeAttribute("aria-current");highlighted=index;
-    const line=lyrics.children[index];if(line){line.setAttribute("aria-current","true");lyrics.scrollTop=line.offsetTop-lyrics.offsetTop-lyrics.clientHeight/3;}
+    const adjusted=time-delay/1000, index=lyricAt(entries,adjusted);
+    if(index!==highlighted){
+      const old=lyrics.children[highlighted];
+      old?.removeAttribute("aria-current");old?.querySelector(".sung")?.classList.remove("sung");
+      highlighted=index;activeWord=-1;
+      const line=lyrics.children[index];if(line){line.setAttribute("aria-current","true");lyrics.scrollTop=line.offsetTop-lyrics.clientHeight/3;}
+    }
+    const entry=entries[index], parts=entry?.parts || [], word=entry?.end!=null && adjusted>=entry.end?-1:lyricAt(parts,adjusted);
+    const spans=lyrics.children[index]?.firstElementChild?.children;
+    if(word!==activeWord){spans?.[activeWord]?.classList.remove("sung");spans?.[word]?.classList.add("sung");activeWord=word;}
+    if(advancing){
+      const next=[entries[index+1]?.time,parts[word+1]?.time,entry?.end].filter(t=>t!=null && t>adjusted);
+      if(next.length)wake=setTimeout(()=>progress(currentTime()),Math.max(12,Math.ceil((Math.min(...next)-adjusted)*1000)));
+    }
   }
-  panel.addEventListener("toggle",()=>{render();progress(Number(el("seek").value));});
+  function updateOffset(delta){setOffset(delta===null?0:delay+delta,true);progress(currentTime());}
+  el("lyrics-earlier").onclick=()=>updateOffset(-100);el("lyrics-later").onclick=()=>updateOffset(100);
+  el("lyrics-reset").onclick=()=>updateOffset(null);
+  function expand(){if(dialog.open)return;dialog.append(reader);el("lyrics-expand").hidden=true;dialog.showModal();render();progress(currentTime());}
+  el("open-lyrics").onclick=()=>{if(!selected || !localStorage.getItem("lyrics/"+selected)){panel.open=true;el("lyrics-file").focus();}else expand();};
+  el("lyrics-expand").onclick=expand;el("lyrics-close").onclick=()=>dialog.close();
+  dialog.addEventListener("close",()=>{panel.append(reader);el("lyrics-expand").hidden=false;progress(currentTime());});
+  panel.addEventListener("toggle",()=>progress(currentTime()));
+  document.addEventListener("visibilitychange",()=>progress(currentTime()));
+  window.addEventListener("veluna-library",()=>{if(shown!==selected && visible()){render();progress(Number(el("seek").value));}});
   el("lyrics-file").onchange=async e=>{
     const file=e.target.files[0],id=selected;e.target.value="";
     if(!file || !id){msg("Chọn bài hát trước khi nhập lời.");return;}
     try{if(file.size>256*1024)throw Error("File lời vượt quá 256 KiB.");
       const raw=await file.text();if(raw.includes("\u0000"))throw Error("Chọn file văn bản UTF-8 hoặc LRC.");
-      localStorage.setItem("lyrics/"+id,raw);shown=null;render();progress(Number(el("seek").value));
+      if(!parseLyrics(raw,true).length)throw Error("File lời đang trống.");
+      localStorage.setItem("lyrics/"+id,raw);shown=null;render();progress(currentTime());
     }catch(err){msg(err.message);}
   };
-  el("lyrics-clear").onclick=()=>{if(selected)localStorage.removeItem("lyrics/"+selected);shown=null;render();};
+  el("lyrics-clear").onclick=()=>{if(selected){localStorage.removeItem("lyrics/"+selected);localStorage.removeItem("lyrics-offset/"+selected);}shown=null;render();progress(currentTime());};
   const media=!native && navigator.mediaSession;
   el("source-info").onclick=async()=>{
     const id=selected, output=el("source-info-result");
@@ -103,7 +131,7 @@ function parseLyrics(text) {
     for(const [action,handler] of Object.entries(actions)){try{media.setActionHandler(action,handler);}catch{}}
   }
   window.velunaListening={progress(time,playing){
-    progress(time);
+    clockAt=performance.now();clockTime=Number(time)||0;advancing=!!playing;progress(clockTime);
     if(media && selected){
       media.playbackState=playing?"playing":"paused";
       if(mediaTrack!==selected){mediaTrack=selected;const title=tracks.find(t=>t.id===selected)?.title || "VelunaMusic";
