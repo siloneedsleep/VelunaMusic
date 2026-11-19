@@ -1,0 +1,11 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
+    android:padding="12dp" android:background="@drawable/widget_background">
+    <TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="VelunaMusic" android:textSize="17sp" android:textColor="#F2FAFF" android:singleLine="true" android:ellipsize="end"/>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center">
+        <Button android:id="@+id/widget_previous" android:layout_width="52dp" android:layout_height="48dp" android:text="⏮" android:contentDescription="Bài trước"/>
+        <Button android:id="@+id/widget_toggle" android:layout_width="52dp" android:layout_height="48dp" android:text="▶" android:contentDescription="Phát hoặc tạm dừng"/>
+        <Button android:id="@+id/widget_next" android:layout_width="52dp" android:layout_height="48dp" android:text="⏭" android:contentDescription="Bài sau"/>
+    </LinearLayout>
+</LinearLayout>

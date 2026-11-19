@@ -35,6 +35,7 @@ public final class MainActivity extends Activity {
     private NearbyClient nearby;
     private ValueCallback<Uri[]> picture;
     private boolean visible;
+    private volatile int streamVolume=100;
     private volatile String spotifyReturn = "";
     private final Runnable tick = new Runnable() {
         @Override public void run() {
@@ -73,7 +74,8 @@ public final class MainActivity extends Activity {
             @Override public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> reply, FileChooserParams params) {
                 if (picture != null) picture.onReceiveValue(null);
                 picture = reply;
-                startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE), 12);
+                boolean images=java.util.Arrays.stream(params.getAcceptTypes()).anyMatch(type->type.startsWith("image/"));
+                startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType(images?"image/*":"*/*").addCategory(Intent.CATEGORY_OPENABLE), 12);
                 return true;
             }
         });
@@ -87,8 +89,16 @@ public final class MainActivity extends Activity {
             try {
                 controller = connection.get();
                 if (controller.getMediaItemCount() == 0 && !library.isEmpty()) {
-                    int i = index(getPreferences(0).getString("lastId", ""));
-                    controller.setMediaItems(library, Math.max(i, 0), getPreferences(0).getLong("lastMs", 0));
+                    ArrayList<MediaItem> restored=new ArrayList<>();
+                    try {
+                        JSONArray ids=new JSONArray(getPreferences(0).getString("lastQueue","[]"));
+                        for(int n=0;n<ids.length();n++){int pos=index(ids.getString(n));if(pos>=0)restored.add(library.get(pos));}
+                    } catch(JSONException ignored){}
+                    if(restored.isEmpty())restored.addAll(library);
+                    String previous=getPreferences(0).getString("lastId","");
+                    int pos=0;while(pos<restored.size() && !restored.get(pos).mediaId.equals(previous))pos++;
+                    boolean found=pos<restored.size();
+                    controller.setMediaItems(restored,found?pos:0,found?getPreferences(0).getLong("lastMs",0):0);
                 }
                 controller.addListener(new Player.Listener() {
                     @Override public void onEvents(Player p, Player.Events events) { publish(); }
@@ -135,7 +145,13 @@ public final class MainActivity extends Activity {
         handler.removeCallbacks(tick);
         if (!visible) return;
         try {
+            if(controller!=null)streamVolume=Math.round(controller.getVolume()*100);
             JSONObject state = progress().put("tracks", tracks());
+            if(controller!=null) {
+                JSONArray queue=new JSONArray();
+                for(int n=0;n<controller.getMediaItemCount();n++)queue.put(controller.getMediaItemAt(n).mediaId);
+                state.put("queue",queue);
+            }
             MediaItem item = controller == null ? null : controller.getCurrentMediaItem();
             state.put("id", item == null ? "" : item.mediaId);
             call("onVelunaState", state);
@@ -152,8 +168,12 @@ public final class MainActivity extends Activity {
     @Override protected void onStop() {
         nearby.stopDiscovery();
         visible = false; handler.removeCallbacks(tick);
-        if (controller != null && controller.getCurrentMediaItem() != null) getPreferences(0).edit()
-            .putString("lastId", controller.getCurrentMediaItem().mediaId).putLong("lastMs", controller.getCurrentPosition()).apply();
+        if (controller != null && controller.getCurrentMediaItem() != null) {
+            JSONArray queue=new JSONArray();
+            for(int i=0;i<controller.getMediaItemCount();i++)queue.put(controller.getMediaItemAt(i).mediaId);
+            getPreferences(0).edit().putString("lastQueue",queue.toString())
+                .putString("lastId", controller.getCurrentMediaItem().mediaId).putLong("lastMs", controller.getCurrentPosition()).apply();
+        }
         super.onStop();
     }
     @Override protected void onDestroy() {
@@ -228,6 +248,75 @@ public final class MainActivity extends Activity {
         if(web!=null)web.evaluateJavascript("window.dispatchEvent(new Event('spotify-return'))",null);
     }
     public final class Bridge {
+        @JavascriptInterface public void setEqualizer(boolean enabled,int bass,int mid,int high){
+            if(Math.abs((long)bass)>6 || Math.abs((long)mid)>6 || Math.abs((long)high)>6)return;
+            runOnUiThread(()->{
+                android.content.SharedPreferences prefs=getSharedPreferences("sound",0);
+                prefs.edit().putBoolean("enabled",enabled).putInt("bass",bass).putInt("mid",mid).putInt("high",high).apply();
+                call("onVelunaSoundStatus",enabled?prefs.getString("result","EQ sẽ áp dụng khi bắt đầu phát."):"Đã tắt EQ.");
+            });
+        }
+        @JavascriptInterface public int playerVolume(){return streamVolume;}
+        @JavascriptInterface public void remotePlayer(String ticket,String json){runOnUiThread(()->{
+            try{
+                if(controller==null)throw new IllegalStateException("Máy phát chưa sẵn sàng.");
+                JSONObject cmd=new JSONObject(json);double value=cmd.getDouble("value");
+                switch(cmd.getString("action")){
+                    case "play":
+                        if(controller.getMediaItemCount()==0)throw new IllegalStateException("Hàng chờ trống.");
+                        controller.prepare();controller.play();break;
+                    case "pause":controller.pause();break;
+                    case "seek":controller.seekTo((long)Math.max(0,value*1000));break;
+                    case "volume":controller.setVolume((float)Math.max(0,Math.min(1,value/100)));break;
+                    case "next":if(!controller.hasNextMediaItem())throw new IllegalStateException("Đã ở cuối hàng chờ.");
+                        controller.seekToNextMediaItem();controller.play();break;
+                    case "previous":if(!controller.hasPreviousMediaItem())throw new IllegalStateException("Đã ở đầu hàng chờ.");
+                        controller.seekToPreviousMediaItem();controller.play();break;
+                    case "select":if(value<0 || value>=controller.getMediaItemCount() || value!=Math.floor(value))throw new IllegalArgumentException();
+                        controller.seekToDefaultPosition((int)value);controller.prepare();controller.play();break;
+                    default:throw new IllegalArgumentException();
+                }
+                publish();call("onVelunaTransferReply",ticket,true,"");
+            }catch(Exception e){call("onVelunaTransferReply",ticket,false,e.getMessage()==null?"Lệnh không hợp lệ.":e.getMessage());}
+        });}
+        @JavascriptInterface public void repeat(int mode) {
+            if(mode<0 || mode>2)return;
+            getSharedPreferences("player",0).edit().putInt("repeat",mode).apply();
+            runOnUiThread(()->{if(controller!=null)controller.setRepeatMode(mode);});
+        }
+        @JavascriptInterface public void sleepUntil(long time) {
+            long now=System.currentTimeMillis();
+            if(time==0 || (time>=now && time<=now+3600000L+1000))
+                getSharedPreferences("player",0).edit().putLong("sleep",time).apply();
+        }
+        @JavascriptInterface public void reorderQueue(String json) { runOnUiThread(()->{
+            if(controller==null)return;
+            try {
+                JSONArray ids=new JSONArray(json);
+                if(ids.length()!=controller.getMediaItemCount())return;
+                for(int target=0;target<ids.length();target++) {
+                    String id=ids.getString(target);
+                    for(int pos=target;pos<ids.length();pos++)if(controller.getMediaItemAt(pos).mediaId.equals(id)){
+                        if(pos!=target)controller.moveMediaItem(pos,target);break;
+                    }
+                }
+                publish();
+            }catch(JSONException e){message("Hàng chờ không hợp lệ.");}
+        });}
+        @JavascriptInterface public void playQueue(String json) { runOnUiThread(() -> {
+            if (controller == null) { message("Trình phát đang khởi động."); return; }
+            try {
+                JSONArray ids = new JSONArray(json);
+                if (ids.length() == 0 || ids.length() > 1000) return;
+                ArrayList<MediaItem> queue = new ArrayList<>();
+                for (int i=0; i<ids.length(); i++) {
+                    int at=index(ids.getString(i));
+                    if (at<0) {message("Một bài trong playlist đã rời thư viện."); return;}
+                    queue.add(library.get(at));
+                }
+                controller.setMediaItems(queue); controller.prepare(); controller.play(); publish();
+            } catch (JSONException invalid) {message("Playlist không hợp lệ.");}
+        }); }
         @JavascriptInterface public void openYouTube(String id) {if(id!=null && id.matches("[a-zA-Z0-9_-]{11}"))runOnUiThread(()->{
             if(controller!=null)controller.pause();startActivity(new Intent(MainActivity.this,YouTubeActivity.class).putExtra("video",id));
         });}

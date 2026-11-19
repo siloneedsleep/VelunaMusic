@@ -18,6 +18,7 @@ final class AutoMix implements Player.Listener, SharedPreferences.OnSharedPrefer
     private final SharedPreferences prefs;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private ExoPlayer main, incoming;
+    private TrackEqualizer mainEq,incomingEq;
     private long width, started;
     private int sourceIndex;
     private float volume;
@@ -25,6 +26,7 @@ final class AutoMix implements Player.Listener, SharedPreferences.OnSharedPrefer
     private final Runnable ramp = this::fade;
     AutoMix(PlaybackService service, MediaSession session, ExoPlayer main) {
         this.service=service; this.session=session; this.main=main;
+        mainEq=new TrackEqualizer(service,main);
         prefs=service.getSharedPreferences("dj",0);
         prefs.registerOnSharedPreferenceChangeListener(this); main.addListener(this); schedule();
     }
@@ -34,7 +36,7 @@ final class AutoMix implements Player.Listener, SharedPreferences.OnSharedPrefer
     private long width() {
         int next=main.getNextMediaItemIndex();
         MediaItem current=main.getCurrentMediaItem();
-        if (!prefs.getBoolean("enabled",false) || current==null || next==C.INDEX_UNSET) return 0;
+        if (!prefs.getBoolean("enabled",false) || current==null || next==C.INDEX_UNSET || main.getRepeatMode()==Player.REPEAT_MODE_ONE) return 0;
         boolean planned=current.mediaId.equals(prefs.getString("from","")) &&
             main.getMediaItemAt(next).mediaId.equals(prefs.getString("to",""));
         long ms=planned ? prefs.getLong("width",2000) : 2000;
@@ -55,7 +57,9 @@ final class AutoMix implements Player.Listener, SharedPreferences.OnSharedPrefer
         ArrayList<MediaItem> items=new ArrayList<>();
         for (int i=0; i<main.getMediaItemCount(); i++) items.add(main.getMediaItemAt(i));
         incoming=new ExoPlayer.Builder(service).setAudioAttributes(attributes(),false).setHandleAudioBecomingNoisy(true).build();
+        incomingEq=new TrackEqualizer(service,incoming);
         incoming.setVolume(0); incoming.setMediaItems(items,next,0); incoming.prepare();
+        incoming.setRepeatMode(main.getRepeatMode());
         volume=main.getVolume(); sourceIndex=main.getCurrentMediaItemIndex(); started=0;
         handler.postDelayed(ramp,Math.max(0,main.getDuration()-main.getCurrentPosition()-width));
     }
@@ -72,16 +76,19 @@ final class AutoMix implements Player.Listener, SharedPreferences.OnSharedPrefer
         if (progress<1f) {handler.postDelayed(ramp,40);return;}
         ExoPlayer old=main; old.removeListener(this); old.pause();
         main=incoming; incoming=null;
+        mainEq.close();mainEq=incomingEq;incomingEq=null;
         main.setAudioAttributes(attributes(),true); main.setVolume(volume);
         session.setPlayer(main); old.release(); main.addListener(this); schedule();
     }
     private void cancelFade() {
         handler.removeCallbacks(ramp);
-        if (incoming!=null) {incoming.release(); incoming=null; main.setVolume(volume);}
+        if (incoming!=null) {incomingEq.close();incomingEq=null;incoming.release(); incoming=null; main.setVolume(volume);}
     }
     @Override public void onEvents(Player p,Player.Events events) {
+        if(events.containsAny(Player.EVENT_MEDIA_METADATA_CHANGED,Player.EVENT_IS_PLAYING_CHANGED,Player.EVENT_MEDIA_ITEM_TRANSITION))
+            PlayerWidget.display(service,p);
         if (events.containsAny(Player.EVENT_TIMELINE_CHANGED,Player.EVENT_POSITION_DISCONTINUITY,
-            Player.EVENT_IS_PLAYING_CHANGED,Player.EVENT_PLAYBACK_STATE_CHANGED)) {
+            Player.EVENT_IS_PLAYING_CHANGED,Player.EVENT_PLAYBACK_STATE_CHANGED,Player.EVENT_REPEAT_MODE_CHANGED)) {
             cancelFade(); schedule();
         }
     }
@@ -92,5 +99,6 @@ final class AutoMix implements Player.Listener, SharedPreferences.OnSharedPrefer
     void close() {
         prefs.unregisterOnSharedPreferenceChangeListener(this);
         main.removeListener(this); handler.removeCallbacks(prepare); cancelFade();
+        mainEq.close();
     }
 }

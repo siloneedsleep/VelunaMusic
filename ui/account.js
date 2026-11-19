@@ -6,6 +6,8 @@
   let auth = null, revision = 0, ready = false, refreshing = null, generation = 0;
   const handoff = accountHandoff({request, deviceId:() => device().device_id, tell, active:() => !!auth});
   const spotify = spotifySettings({request,user:()=>auth?.id,perform});
+  const collections = playlistLibrary(request);
+  const remote = playerRemote({config,session:()=>auth,device,refresh:()=>request("/auth/v1/user")});
 
   async function request(path, method = "GET", body, authenticated = true, headers = {}) {
     const session = auth;
@@ -19,6 +21,7 @@
         }).finally(() => { refreshing = null; });
       await refreshing;
     }
+    if(authenticated && (!auth || auth.id!==session.id)) throw Error("Tài khoản đã đổi.");
     const opts = {method, headers: {apikey: config.publishableKey, ...headers}, signal: AbortSignal.timeout(15000)};
     if (authenticated) opts.headers.Authorization = "Bearer " + auth.access;
     if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
@@ -26,7 +29,7 @@
     const text = await response.text();
     const data = text ? JSON.parse(text) : null;
     if (!response.ok) {
-      if (data?.code === "40001") throw Error("Giao diện trên máy khác đã đổi. Nhận phiên bản mới trước khi lưu tiếp.");
+      if (data?.code === "40001") throw Object.assign(Error("Dữ liệu trên máy khác đã đổi. Nhận phiên bản mới trước khi lưu tiếp."),{code:data.code});
       throw Error(data?.msg || data?.message || data?.error_description || "Supabase chưa xử lý được yêu cầu.");
     }
     return data;
@@ -34,6 +37,8 @@
   function remember(s) {
     auth = { access:s.access_token, refresh:s.refresh_token, expires:Date.now() + s.expires_in * 1000,
       id:s.user.id, email:s.user.email };
+    collections.account(auth.id);
+    remote.update();
   }
   function panels() {
     get("credentials").hidden = !!auth;
@@ -84,14 +89,14 @@
   }
   get("account").onclick = () => {
     panels(); get("account-dialog").showModal();
-    if (auth) {handoff.open();perform(spotify.show);}
+    if (auth) {handoff.open();remote.update();perform(spotify.show);}
     if (!config.url || !config.publishableKey) {
       tell("Bản thử nghiệm này chưa được kết nối với project Supabase.");
       get("credentials").hidden = true;
     }
   };
   get("close-account").onclick = () => get("account-dialog").close();
-  get("account-dialog").addEventListener("close", () => handoff.close());
+  get("account-dialog").addEventListener("close", () => {handoff.close();remote.update();});
   get("login-form").onsubmit = e => { e.preventDefault(); const signup = e.submitter?.id === "signup";
     perform(async () => {
       const data = await request(signup ? "/auth/v1/signup" : "/auth/v1/token?grant_type=password", "POST",
@@ -113,7 +118,7 @@
   });
   get("logout").onclick = () => perform(async () => {
     try { await request("/auth/v1/logout?scope=local", "POST"); }
-    finally { handoff.clear(); auth = null; revision = 0; ready = false; generation++; await window.velunaVault.write("account", ""); panels(); await spotify.clear(); tell("Đã đăng xuất khỏi ứng dụng."); }
+    finally { handoff.clear(); auth = null; collections.account(null); remote.update(); revision = 0; ready = false; generation++; await window.velunaVault.write("account", ""); panels(); await spotify.clear(); tell("Đã đăng xuất khỏi ứng dụng."); }
   });
   async function restore() {
     const token = await window.velunaVault.read("account");

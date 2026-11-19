@@ -33,3 +33,22 @@ body[data-motion=off] *,body[data-motion=off] *::before,body[data-motion=off] *:
 #nearby-qr{width:min(200px,100%);height:auto;display:block;margin:12px auto;image-rendering:pixelated}#nearby-drop{position:fixed;bottom:5vh;left:5vw;right:5vw;z-index:4;background:#10436df2;color:white;border:2px dashed #87d7ff;border-radius:20px;padding:30px;text-align:center;box-shadow:0 12px 50px #00122288}#nearby-drop.over{background:#146f91;transform:scale(1.025)}[hidden]{display:none!important}#nearby-progress{width:100%;accent-color:var(--accent)}#nearby-dialog select[multiple]{width:100%}@media(max-width:470px){header{height:auto;min-height:58px;gap:6px;flex-wrap:wrap;padding:6px 8px}header nav{display:flex;gap:1px;flex-wrap:wrap}header nav button{font-size:.79em;padding:6px 7px}}
 .source-library{margin-top:18px}.source-library summary{cursor:pointer;color:var(--accent)}.source-library form{display:grid;gap:8px;margin:12px 0}.source-library form>button{justify-self:start}#youtube-list>div{display:flex;justify-content:space-between;gap:8px}
 .track-drag{float:right;touch-action:none;user-select:none;padding:0 .65rem;cursor:grab;color:var(--accent)}
+.listening{clear:both;text-align:left;margin-top:18px}.listening label,#playlist-panel>label{display:block;margin:10px 0}
+.listening summary{cursor:pointer;color:var(--accent)}#lyrics-lines{position:relative;max-height:9em;overflow:auto}
+#lyrics-lines p{margin:.35rem 0;color:inherit;opacity:.7}#lyrics-lines [aria-current=true]{color:var(--accent);font-weight:700;opacity:1}
+#playlist-items li{margin:.4rem 0}#playlist-items button{font-size:.8em;padding:4px 7px}
+#window-tools{margin:.6rem auto 0}#window-tools button{padding:.35rem .6rem;font-size:.8em}
+body[data-mini=true] header,body[data-mini=true] .collection,body[data-mini=true] .listening,body[data-mini=true] #message{display:none}
+body[data-mini=true] main{display:block;padding:.45rem;width:100%}body[data-mini=true] aside{min-height:0;padding:.6rem}
+body[data-mini=true] #cover{width:62px;float:left;margin-right:.8rem}body[data-mini=true] aside p{margin:0}
+header,.collection,aside,dialog,button,.row,input,select,textarea,fieldset,#lyrics-lines,#nearby-drop,#playlist-panel{
+  color:var(--glass-text,#ecf6ff);box-shadow:inset 0 1px rgb(236 250 255 / calc(var(--glass-highlight,8)/100)),0 4px 14px rgb(3 13 32 / calc(var(--glass-shadow,18)/100))}
+#lyrics-lines:not(:empty),#playlist-panel[open],#nearby-drop{border-radius:calc(var(--glass-radius,15)*1px);padding:.65rem;background-color:color-mix(in srgb,var(--glass-tint,#19374f) calc(var(--glass-opacity,78)*1%),transparent);backdrop-filter:blur(calc(var(--glass-blur,12)*1px))}
+body[data-intensity=economy] *,body[data-intensity=economy] *::before{animation-duration:.01ms!important;transition-duration:.01ms!important;backdrop-filter:none}
+@media(prefers-reduced-motion:no-preference){
+  body[data-motion=on][data-intensity=full] dialog[open]{animation:glass-open .38s cubic-bezier(.15,1.2,.35,1)}
+  body[data-motion=on][data-intensity=full] #nearby-drop:not([hidden]){animation:glass-open .32s ease-out}
+  body[data-motion=on][data-intensity=full] button:hover{transform:translateY(-2px)}
+  @keyframes glass-open{from{opacity:0;transform:translateY(16px) scale(.94)}}
+}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}

@@ -30,15 +30,19 @@ function draw() {
   }
   el("list").replaceChildren(fragment);
   el("title").textContent=tracks.find(t => t.id === selected)?.title || "Chọn một bài hát";
+  window.dispatchEvent(new Event("veluna-library"));
 }
 function position(time, duration, playing) {
-  document.body.dataset.playing=String(!!playing);
+  window.velunaDJ?.nearingEnd(time,duration,playing);
+  window.velunaListening?.progress(time,playing);
+  const playback=String(!!playing);
+  if(document.body.dataset.playing!==playback){document.body.dataset.playing=playback;window.dispatchEvent(new Event("veluna-playback"));}
   el("seek").max=Number.isFinite(duration) ? duration : 0;
   if (document.activeElement !== el("seek")) el("seek").value = time || 0;
   el("elapsed").textContent=fmt(time); el("duration").textContent=fmt(duration);
   el("play").textContent=playing ? "Ⅱ" : "▶";
 }
-function savePosition() { if (!native && selected) localStorage.setItem("session", JSON.stringify({id:selected,time:audio.currentTime || 0})); }
+function savePosition() { if (!native && selected) localStorage.setItem("session", JSON.stringify({id:selected,time:audio.currentTime || 0,queue:albumQueue})); }
 function loadTrack(id, play, time=0) {
   if (!tracks.some(t=>t.id===id)) return;
   window.velunaDJ?.stopFade();
@@ -49,11 +53,16 @@ function loadTrack(id, play, time=0) {
   newSeek=time; audio.src=desktop.convertFileSrc(id); audio.load();
   if (play) audio.play().catch(e=>msg(e.message));
 }
-function skip(step) {
-  const order=playOrder(), next=order[order.indexOf(selected)+step]; if(next) loadTrack(next,true);
+function skip(step, ended=false) {
+  const order=playOrder(), repeat=el("repeat-mode").value;
+  if(ended && repeat==="one" && selected){loadTrack(selected,true);return;}
+  let i=order.indexOf(selected)+step;
+  if(repeat==="all" && order.length)i=(i+order.length)%order.length;
+  if(order[i])loadTrack(order[i],true);
 }
 window.onVelunaState = state => {
-  tracks=state.tracks || []; selected=state.id || ""; draw(); position(state.time,state.duration,state.playing);
+  tracks=state.tracks || []; if(Array.isArray(state.queue))albumQueue=state.queue;
+  selected=state.id || ""; draw(); position(state.time,state.duration,state.playing);
   window.velunaDJ?.prepare();
   window.dispatchEvent(new CustomEvent("veluna-player",{detail:state}));
 };
@@ -85,10 +94,11 @@ el("play").onclick=()=>{if(!selected) {if(tracks[0]) loadTrack(tracks[0].id,true
 el("seek").onchange=e=>{window.velunaDJ?.stopFade();const t=+e.target.value;if(native)native.seek(Math.round(t*1000));else if(audio.src)audio.currentTime=t;};
 function bindAudio(player) {
   player.onloadedmetadata=()=>{if(newSeek!==null && Number.isFinite(player.duration))player.currentTime=Math.min(newSeek,player.duration);newSeek=null;};
-  player.ontimeupdate=()=>{if(!document.hidden)position(player.currentTime,player.duration,!player.paused);window.velunaDJ?.tick();};
-  player.onplay=()=>{savePosition();position(player.currentTime,player.duration,true);window.velunaDJ?.prepare();};
-  player.onpause=()=>{if(!player.ended)window.velunaDJ?.stopFade();savePosition();position(player.currentTime,player.duration,false);};
-  player.onended=()=>{if(!window.velunaDJ?.finish())skip(1);};
+  player.ontimeupdate=()=>{if(!document.hidden)position(player.currentTime,player.duration,!player.paused);
+    else window.velunaDJ?.nearingEnd(player.currentTime,player.duration,!player.paused);window.velunaDJ?.tick();};
+  player.onplay=()=>{window.velunaSound?.wake();savePosition();position(player.currentTime,player.duration,true);window.velunaDJ?.prepare();};
+  player.onpause=()=>{if(!player.ended)window.velunaDJ?.stopFade();window.velunaSound?.sleep();savePosition();position(player.currentTime,player.duration,false);};
+  player.onended=()=>{if(!window.velunaDJ?.finish())skip(1,true);};
   player.onerror=()=>msg("Không đọc được file này. Kiểm tra định dạng và vị trí file.");
 }
 bindAudio(audio);
@@ -99,11 +109,13 @@ el("check").onclick=()=>{el("prefs").close();check(true);};
 const applyColor=c=>{document.body.style.setProperty("--accent",c);el("color").value=c;};
 applyColor(localStorage.getItem("color") || "#83d8ff");
 el("color").oninput=e=>{applyColor(e.target.value);localStorage.setItem("color",e.target.value);};
-function applyBackground(data){document.body.style.backgroundImage=data?'linear-gradient(#06152999,#061529cc),url("'+data+'")':"";}
+function applyBackground(data){document.body.style.backgroundImage=data?'linear-gradient(rgb(6 21 41 / var(--back-shade,60%)),rgb(6 21 41 / var(--back-shade,60%))),url("'+data+'")':"";}
 applyBackground(localStorage.getItem("background"));
 el("background").onchange=async e=>{
   const file=e.target.files[0];if(!file)return;
   try{const bitmap=await createImageBitmap(file);const canvas=document.createElement("canvas");const scale=Math.min(1,1280/Math.max(bitmap.width,bitmap.height));canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));canvas.getContext("2d").drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();const data=canvas.toDataURL("image/jpeg",.78);localStorage.setItem("background",data);applyBackground(data);}catch{msg("Không lưu được ảnh nền.");}
 };
 el("reset").onclick=()=>{localStorage.removeItem("background");applyBackground("");};
-(async()=>{try{if(native){native.refresh();}else if(desktop){tracks=await desktop.invoke("library");const old=saved();if(old.id)loadTrack(old.id,false,old.time);draw();}if(native || desktop){check();setInterval(()=>{if(!document.hidden)check();},6*3600*1000);}}catch(e){msg(String(e));}})();
+(async()=>{try{if(native){native.refresh();}else if(desktop){tracks=await desktop.invoke("library");const old=saved();
+  if(Array.isArray(old.queue)){const known=new Set(tracks.map(t=>t.id));albumQueue=old.queue.filter(id=>known.has(id));}
+  if(old.id)loadTrack(old.id,false,old.time);draw();}if(native || desktop){check();setInterval(()=>{if(!document.hidden)check();},6*3600*1000);}}catch(e){msg(String(e));}})();

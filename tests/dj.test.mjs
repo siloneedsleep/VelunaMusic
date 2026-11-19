@@ -19,6 +19,9 @@ function player({failure=false,album=false}={}) {
 test("AI receives measured features and can only select a locally bounded plan",async()=>{
   const p=player();
   await new Promise(resolve=>setImmediate(resolve));
+  await p.window.velunaDJ.nearingEnd(10,120,true);
+  assert.equal(p.requests.length,0);
+  await p.window.velunaDJ.nearingEnd(100,120,true);
   assert.equal(p.requests.length,1);
   const data=p.requests[0][1].body;
   for(const path of p.localFiles)assert.ok(!data.includes(path));
@@ -29,6 +32,7 @@ test("AI receives measured features and can only select a locally bounded plan",
 test("invalid model choice falls back and album mode has zero overlap",async()=>{
   const failed=player({failure:true}),album=player({album:true});
   await new Promise(resolve=>setImmediate(resolve));
+  await failed.window.velunaDJ.nearingEnd(100,120,true);
   assert.match(failed.el("dj-status").textContent,/AutoMix/);
   assert.equal(failed.plans.at(-1)[3],4000);assert.equal(album.plans.at(-1)[3],0);assert.equal(album.requests.length,0);
 });

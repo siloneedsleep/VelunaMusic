@@ -7,9 +7,11 @@
   let settings = {...defaults};
   try { Object.assign(settings, JSON.parse(localStorage.getItem("dj-settings") || "{}")); } catch {}
   let pair = "", plan = null, generation = 0, used = 0, fading = null, timer = 0;
+  let upcoming = null;
   const measurements = new Map();
   const info = text => { el("dj-status").textContent = text; };
-  const nextId = () => { const order=playOrder(), i=order.indexOf(selected); return i<0 ? null : order[i+1]; };
+  const nextId = () => { const order=playOrder(), i=order.indexOf(selected), repeat=el("repeat-mode").value;
+    if(i<0 || repeat==="one")return null;return order[i+1] || (repeat==="all" && order.length>1 ? order[0] : null); };
   function validDuration(value) { return typeof value === "number" && Number.isFinite(value) && value>0; }
   function options(a,b) {
     if (settings.style === "album") return [0];
@@ -29,7 +31,7 @@
     return measurements.get(id);
   }
   function setPlan(from,to,ms,method) {
-    plan = {from,to,ms}; if(native) native.setMix(settings.enabled,from,to,ms);
+    plan = {from,to,ms}; if(native) native.setMix(settings.enabled && settings.style!=="album",from,to,ms);
     info(method+" · "+(ms/1000).toFixed(1)+" giây");
   }
   async function prepare() {
@@ -40,7 +42,7 @@
       return;
     }
     if(key===pair) return;
-    pair=key; const turn=++generation;
+    pair=key; upcoming=null; const turn=++generation;
     const fresh=()=>turn===generation && pair===key && settings.enabled;
     const basic=settings.style==="album"?0:2000;
     setPlan(from,to,basic,"AutoMix trên máy");
@@ -52,32 +54,39 @@
       setPlan(from,to,choices[0],"AutoMix trên máy");
       const endpoint=endpoints[settings.provider];
       if(!endpoint || !settings.model || used>=settings.limit) return;
-      const secret=await window.velunaVault.read("dj-"+settings.provider);
-      if(!secret || !fresh()) return;
-      ++used;
-      const response=await fetch(endpoint,{method:"POST",redirect:"error",signal:AbortSignal.timeout(9000),
-        headers:{Authorization:"Bearer "+secret,"Content-Type":"application/json"},
-        body:JSON.stringify({model:settings.model,max_tokens:40,messages:[
-          {role:"system",content:'Choose one transition for two local music tracks. Respond only with JSON {"option":index} using a zero-based index from the supplied overlap durations. Low confidence means the tempo may be wrong.'},
-          {role:"user",content:JSON.stringify({outro:a.outro,intro:b.intro,style:settings.style,overlap_ms:choices})}
-        ]})});
-      if(!response.ok) throw Error("Nhà cung cấp trả về HTTP "+response.status);
-      const body=await response.json();
-      const result=JSON.parse(body.choices?.[0]?.message?.content ?? "");
-      if(!Number.isInteger(result.option) || result.option<0 || result.option>=choices.length) throw Error("Lựa chọn không hợp lệ");
-      if(fresh() && !fading) setPlan(from,to,choices[result.option],"AI DJ");
+      upcoming=async()=>{
+        if(!fresh() || fading || used>=settings.limit)return;
+        try {
+          const secret=await window.velunaVault.read("dj-"+settings.provider);
+          if(!secret || !fresh()) return;
+          ++used;
+          const response=await fetch(endpoint,{method:"POST",redirect:"error",signal:AbortSignal.timeout(9000),
+            headers:{Authorization:"Bearer "+secret,"Content-Type":"application/json"},
+            body:JSON.stringify({model:settings.model,max_tokens:40,messages:[
+              {role:"system",content:'Choose one transition for two local music tracks. Respond only with JSON {"option":index} using a zero-based index from the supplied overlap durations. Low confidence means the tempo may be wrong.'},
+              {role:"user",content:JSON.stringify({outro:a.outro,intro:b.intro,style:settings.style,overlap_ms:choices})}
+            ]})});
+          if(!response.ok) throw Error("Nhà cung cấp trả về HTTP "+response.status);
+          const body=await response.json();
+          const result=JSON.parse(body.choices?.[0]?.message?.content ?? "");
+          if(!Number.isInteger(result.option) || result.option<0 || result.option>=choices.length) throw Error("Lựa chọn không hợp lệ");
+          if(fresh() && !fading) setPlan(from,to,choices[result.option],"AI DJ");
+        } catch(e) { if(fresh()) info("Đang dùng AutoMix trên máy · "+(e.message || String(e))); }
+      };
     } catch(e) { if(fresh()) info("Đang dùng AutoMix trên máy · "+(e.message || String(e))); }
   }
   function stopFade() {
     clearInterval(timer);
     if(!fading) return;
     const {incoming,outgoing,volume}=fading; fading=null;
+    window.velunaSound?.detach(incoming);
     incoming.pause(); incoming.removeAttribute("src"); incoming.load(); outgoing.volume=volume;
   }
   function finish() {
     if(!fading || !fading.started) return false;
     const {incoming,outgoing,volume,to}=fading; fading=null; clearInterval(timer);
     outgoing.onended=outgoing.onpause=outgoing.ontimeupdate=outgoing.onplay=outgoing.onerror=outgoing.onloadedmetadata=null;
+    window.velunaSound?.detach(outgoing);
     outgoing.pause(); outgoing.removeAttribute("src");outgoing.load();
     audio=incoming; audio.volume=volume; selected=to; bindAudio(audio); draw(); savePosition();
     position(audio.currentTime,audio.duration,!audio.paused); pair=""; prepare(); return true;
@@ -89,6 +98,7 @@
     const remaining=audio.duration-audio.currentTime;
     if(remaining>duration || remaining<=0.08)return;
     const incoming=new Audio(); const outgoing=audio;
+    incoming.crossOrigin="anonymous";window.velunaSound?.attach(incoming);
     const transition={outgoing,incoming,to:plan.to,volume:outgoing.volume,started:false};
     fading=transition; incoming.volume=0; incoming.src=desktop.convertFileSrc(plan.to);
     try {
@@ -103,7 +113,12 @@
       timer=setInterval(fadeStep,50); fadeStep();
     } catch { if(fading===transition){stopFade();plan=null;} }
   }
-  window.velunaDJ={prepare,tick,stopFade,finish};
+  function nearingEnd(time,duration,playing) {
+    const remaining=duration-time;
+    if(!playing || !upcoming || !Number.isFinite(remaining) || remaining>45 || remaining<3 || fading)return;
+    const select=upcoming;upcoming=null;return select();
+  }
+  window.velunaDJ={prepare,tick,stopFade,finish,nearingEnd,measure};
   window.onVelunaAlbum = ids => {
     if(!ids?.length) return;
     albumQueue=ids; pair=""; el("dj-dialog").close();

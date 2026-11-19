@@ -32,7 +32,7 @@ struct Receiver {
     tls: Arc<ServerConfig>,
     pin: String,
     decision: Mutex<Decision>,
-    app: AppHandle,
+    destination: Box<dyn Destination>,
     peers: Mutex<HashMap<String, String>>,
     daemon: Option<mdns_sd::ServiceDaemon>,
 }
@@ -94,6 +94,9 @@ fn tls_identity() -> Result<(ServerConfig, String), String> {
     } else {
         serde_json::from_str(&saved).map_err(err)?
     };
+    server_identity(identity)
+}
+fn server_identity(identity: Identity) -> Result<(ServerConfig, String), String> {
     let cert = B64.decode(identity.cert).map_err(err)?;
     let pin = digest_hex(&cert);
     let key = PrivatePkcs8KeyDer::from(B64.decode(identity.key).map_err(err)?);
@@ -106,10 +109,24 @@ fn tls_identity() -> Result<(ServerConfig, String), String> {
             .map_err(err)?;
     Ok((config, pin))
 }
-fn notify(app: &AppHandle, event: &str, payload: impl Serialize) {
-    if let Some(win) = app.get_webview_window("main") {
-        if let Ok(json) = serde_json::to_string(&payload) {
-            let _ = win.eval(format!("window.onVelunaNearby?.({event:?},{json})"));
+trait Destination: Send + Sync {
+    fn data_dir(&self) -> Result<std::path::PathBuf, String>;
+    fn import(&self, file: std::path::PathBuf) -> Result<String, String>;
+    fn event(&self, event: &str, payload: serde_json::Value);
+}
+impl Destination for AppHandle {
+    fn data_dir(&self) -> Result<std::path::PathBuf, String> {
+        self.path().app_data_dir().map_err(err)
+    }
+    fn import(&self, file: std::path::PathBuf) -> Result<String, String> {
+        let (_, ids) = super::import_paths(self, [file])?;
+        ids.into_iter()
+            .next()
+            .ok_or_else(|| "Không thêm được file.".to_owned())
+    }
+    fn event(&self, event: &str, payload: serde_json::Value) {
+        if let Some(win) = self.get_webview_window("main") {
+            let _ = win.eval(format!("window.onVelunaNearby?.({event:?},{payload})"));
         }
     }
 }
@@ -145,7 +162,7 @@ fn filename(input: &str) -> Result<String, String> {
 }
 impl Receiver {
     fn persist(&self, peers: &HashMap<String, String>) -> Result<(), String> {
-        let path = state_path(&self.app)?;
+        let path = self.destination.data_dir()?.join("nearby-peers.json");
         let parent = path.parent().ok_or("Missing data directory")?;
         let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(err)?;
         serde_json::to_writer(&mut temp, peers).map_err(err)?;
@@ -193,11 +210,8 @@ impl Receiver {
             }
             *d = Some((id.clone(), tx));
         }
-        notify(
-            &self.app,
-            "pair",
-            serde_json::json!({"id":id,"device":phone}),
-        );
+        self.destination
+            .event("pair", serde_json::json!({"id":id,"device":phone}));
         let allowed = rx.recv_timeout(Duration::from_secs(60)).unwrap_or(false);
         let mut d = self.decision.lock().map_err(err)?;
         if d.as_ref().is_some_and(|x| x.0 == id) {
@@ -262,7 +276,8 @@ impl Receiver {
             changed.insert(peer, name);
             self.persist(&changed)?;
             *peers = changed;
-            notify(&self.app, "status", "Đã ghép đôi. PC có thể nhận nhạc.");
+            self.destination
+                .event("status", "Đã ghép đôi. PC có thể nhận nhạc.".into());
             return reply(io, serde_json::json!({"ok":true}));
         }
         if h.kind != "send" || !self.peers.lock().map_err(err)?.contains_key(&peer) {
@@ -280,10 +295,8 @@ impl Receiver {
         }
         let name = filename(&h.name)?;
         let dir = self
-            .app
-            .path()
-            .app_data_dir()
-            .map_err(err)?
+            .destination
+            .data_dir()?
             .join("received")
             .join(&h.digest);
         fs::create_dir_all(&dir).map_err(err)?;
@@ -306,10 +319,9 @@ impl Receiver {
             temp.write_all(&buf[..n]).map_err(err)?;
             remaining -= n as u64;
             if last.elapsed() > Duration::from_millis(400) {
-                notify(
-                    &self.app,
+                self.destination.event(
                     "progress",
-                    ((h.size - remaining) * 100 / h.size) as u8,
+                    (((h.size - remaining) * 100 / h.size) as u8).into(),
                 );
                 last = Instant::now();
             }
@@ -352,13 +364,9 @@ impl Receiver {
             p
         };
         drop(guard);
-        let (_, ids) = super::import_paths(&self.app, [file])?;
-        let id = ids.first().ok_or("Không thêm được file.")?;
-        notify(
-            &self.app,
-            "received",
-            serde_json::json!({"id":id,"action":h.action}),
-        );
+        let id = self.destination.import(file)?;
+        self.destination
+            .event("received", serde_json::json!({"id":id,"action":h.action}));
         reply(io, serde_json::json!({"ok":true,"digest":h.digest}))
     }
 }
@@ -429,7 +437,7 @@ pub fn nearby_start(
         tls: Arc::new(tls),
         pin,
         decision: Mutex::default(),
-        app,
+        destination: Box::new(app),
         peers: Mutex::new(peers),
         daemon,
     });
@@ -487,5 +495,148 @@ pub fn nearby_forget(app: AppHandle, state: tauri::State<Nearby>) -> Result<(), 
         Ok(()) => Ok(()),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(err(e)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rustls::{ClientConfig, ClientConnection, RootCertStore};
+    use serde_json::{json, Value};
+    use std::path::PathBuf;
+
+    struct Library {
+        dir: PathBuf,
+        events: mpsc::Sender<(String, Value)>,
+    }
+    impl Destination for Library {
+        fn data_dir(&self) -> Result<PathBuf, String> {
+            Ok(self.dir.clone())
+        }
+        fn import(&self, file: PathBuf) -> Result<String, String> {
+            Ok(file.to_string_lossy().into_owned())
+        }
+        fn event(&self, event: &str, value: Value) {
+            self.events.send((event.to_owned(), value)).unwrap();
+        }
+    }
+    fn read_frame(input: &mut impl Read) -> Value {
+        let mut size = [0; 4];
+        input.read_exact(&mut size).unwrap();
+        let mut message = vec![0; u32::from_be_bytes(size) as usize];
+        input.read_exact(&mut message).unwrap();
+        serde_json::from_slice(&message).unwrap()
+    }
+    fn wave() -> Vec<u8> {
+        let mut out = b"RIFF".to_vec();
+        let size = 16000u32;
+        out.extend((size + 36).to_le_bytes());
+        out.extend(b"WAVEfmt ");
+        out.extend(16u32.to_le_bytes());
+        for n in [1u16, 1] {
+            out.extend(n.to_le_bytes());
+        }
+        for n in [8000u32, 16000] {
+            out.extend(n.to_le_bytes());
+        }
+        for n in [2u16, 16] {
+            out.extend(n.to_le_bytes());
+        }
+        out.extend(b"data");
+        out.extend(size.to_le_bytes());
+        out.resize(44 + size as usize, 0);
+        out
+    }
+    #[test]
+    fn nearby_pairs_over_tls_and_imports_complete_audio_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let (events, incoming) = mpsc::channel();
+        let generated =
+            rcgen::generate_simple_self_signed(vec!["velunamusic.local".into()]).unwrap();
+        let mut trust = RootCertStore::empty();
+        trust.add(generated.cert.der().clone()).unwrap();
+        let (tls, pin) = server_identity(Identity {
+            cert: B64.encode(generated.cert.der()),
+            key: B64.encode(generated.key_pair.serialize_der()),
+        })
+        .unwrap();
+        let client = Arc::new(
+            ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_safe_default_protocol_versions()
+                .unwrap()
+                .with_root_certificates(trust)
+                .with_no_client_auth(),
+        );
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let key = random().unwrap();
+        let server = Arc::new(Receiver {
+            stop: false.into(),
+            sessions: 0.into(),
+            address,
+            token: random().unwrap(),
+            created: Instant::now(),
+            tls: Arc::new(tls),
+            pin,
+            decision: Mutex::default(),
+            peers: Mutex::default(),
+            daemon: None,
+            destination: Box::new(Library {
+                dir: temp.path().to_owned(),
+                events,
+            }),
+        });
+        let worker = Arc::clone(&server);
+        let thread = std::thread::spawn(move || {
+            for _ in 0..4 {
+                let (stream, _) = listener.accept().unwrap();
+                let _ = worker.connection(stream);
+            }
+        });
+        let connect = || {
+            let socket = TcpStream::connect(address).unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(8)))
+                .unwrap();
+            StreamOwned::new(
+                ClientConnection::new(client.clone(), "velunamusic.local".try_into().unwrap())
+                    .unwrap(),
+                socket,
+            )
+        };
+        let mut pair = connect();
+        reply(
+            &mut pair,
+            json!({"kind":"pair","key":key,"token":server.token,"device":"Fixture phone"}),
+        )
+        .unwrap();
+        let (event, request) = incoming.recv_timeout(Duration::from_secs(8)).unwrap();
+        assert_eq!(event, "pair");
+        let (id, decision) = server.decision.lock().unwrap().take().unwrap();
+        assert_eq!(id, request["id"]);
+        decision.send(true).unwrap();
+        assert_eq!(read_frame(&mut pair)["ok"], true);
+        let saved = fs::read_to_string(temp.path().join("nearby-peers.json")).unwrap();
+        assert!(saved.contains(&digest_hex(key.as_bytes())) && !saved.contains(&key));
+        let audio = wave();
+        let digest = digest_hex(&audio);
+        let send = |hash: &str| {
+            let mut link = connect();
+            reply(&mut link,json!({"kind":"send","key":key,"size":audio.len(),"digest":hash,"name":"Demo.wav","action":"save"})).unwrap();
+            assert_eq!(read_frame(&mut link)["ready"], true);
+            link.write_all(&audio).unwrap();
+            link.flush().unwrap();
+            read_frame(&mut link)
+        };
+        assert_eq!(send(&"0".repeat(64))["ok"], false);
+        assert_eq!(send(&digest)["digest"], digest);
+        assert_eq!(send(&digest)["digest"], digest);
+        thread.join().unwrap();
+        let paths = fs::read_dir(temp.path().join("received").join(&digest))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect::<Vec<_>>();
+        assert_eq!(paths.len(), 1);
+        assert_eq!(fs::read(&paths[0]).unwrap(), audio);
     }
 }

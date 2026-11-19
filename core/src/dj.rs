@@ -21,6 +21,11 @@ pub struct Analysis {
     pub intro: Section,
     pub outro: Option<Section>,
     pub duration: Option<f64>,
+    pub codec: Option<&'static str>,
+    pub sample_rate: Option<u32>,
+    pub bit_depth: Option<u32>,
+    pub channels: Option<usize>,
+    pub average_file_kbps: Option<u32>,
 }
 
 fn describe(envelope: &[f32]) -> Section {
@@ -108,6 +113,11 @@ fn section(
 }
 
 pub fn analyze(file: File) -> Result<Analysis, String> {
+    let bytes = file
+        .metadata()
+        .ok()
+        .map(|m| m.len())
+        .filter(|size| *size > 0);
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let probed = symphonia::default::get_probe()
         .format(
@@ -151,6 +161,16 @@ pub fn analyze(file: File) -> Result<Analysis, String> {
         intro,
         outro,
         duration,
+        codec: symphonia::default::get_codecs()
+            .get_codec(params.codec)
+            .map(|c| c.short_name),
+        sample_rate: params.sample_rate,
+        bit_depth: params.bits_per_sample,
+        channels: params.channels.map(|c| c.count()),
+        average_file_kbps: bytes
+            .zip(duration)
+            .filter(|(_, d)| *d > 0.0)
+            .map(|(size, d)| (size as f64 * 8.0 / d / 1000.0).round() as u32),
     })
 }
 
@@ -228,5 +248,8 @@ mod tests {
         assert_eq!(features.intro.bpm, Some(120));
         assert_eq!(features.outro.unwrap().bpm, Some(100));
         assert!((features.duration.unwrap() - 32.0).abs() < 0.01);
+        assert_eq!(features.sample_rate, Some(8000));
+        assert_eq!(features.channels, Some(1));
+        assert_eq!(features.average_file_kbps, Some(128));
     }
 }

@@ -293,9 +293,49 @@ fn spotify_callback(app: tauri::AppHandle) -> Result<Option<String>, String> {
         })
         .map(String::from))
 }
+#[derive(Default)]
+struct PlayerWindow(std::sync::Mutex<Option<(tauri::PhysicalSize<u32>, bool)>>);
+
+#[tauri::command]
+fn compact_player(
+    window: tauri::WebviewWindow,
+    state: tauri::State<PlayerWindow>,
+) -> Result<bool, String> {
+    let mut previous = state.0.lock().map_err(|_| "Window state unavailable")?;
+    let error = |e: tauri::Error| e.to_string();
+    if let Some((size, maximized)) = *previous {
+        window.set_size(size).map_err(error)?;
+        window
+            .set_min_size(Some(tauri::LogicalSize::new(540, 500)))
+            .map_err(error)?;
+        if maximized {
+            window.maximize().map_err(error)?;
+        }
+        *previous = None;
+        return Ok(false);
+    }
+    let maximized = window.is_maximized().map_err(error)?;
+    if maximized {
+        window.unmaximize().map_err(error)?;
+    }
+    let size = window.inner_size().map_err(error)?;
+    window
+        .set_min_size(Some(tauri::LogicalSize::new(320, 200)))
+        .map_err(error)?;
+    window
+        .set_size(tauri::LogicalSize::new(420, 275))
+        .map_err(error)?;
+    *previous = Some((size, maximized));
+    Ok(true)
+}
+#[tauri::command]
+fn hide_to_tray(window: tauri::WebviewWindow) -> Result<(), String> {
+    window.hide().map_err(|e| e.to_string())
+}
 fn main() {
     tauri::Builder::default()
         .manage(nearby::Nearby::default())
+        .manage(PlayerWindow::default())
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
@@ -304,6 +344,37 @@ fn main() {
         }))
         .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
+            use tauri::menu::{Menu, MenuItem};
+            let open = MenuItem::with_id(app, "show", "Mở VelunaMusic", true, None::<&str>)?;
+            let play = MenuItem::with_id(app, "play", "Phát / tạm dừng", true, None::<&str>)?;
+            let exit = MenuItem::with_id(app, "quit", "Thoát", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open, &play, &exit])?;
+            let mut tray = tauri::tray::TrayIconBuilder::with_id("veluna-player")
+                .tooltip("VelunaMusic")
+                .menu(&menu);
+            if let Some(icon) = app.default_window_icon() {
+                tray = tray.icon(icon.clone());
+            }
+            tray.on_menu_event(|app, event| {
+                if event.id.as_ref() == "quit" {
+                    app.exit(0);
+                    return;
+                }
+                if let Some(win) = app.get_webview_window("main") {
+                    match event.id.as_ref() {
+                        "show" => {
+                            let _ = win.show();
+                            let _ = win.unminimize();
+                            let _ = win.set_focus();
+                        }
+                        "play" => {
+                            let _ = win.eval("document.getElementById('play').click()");
+                        }
+                        _ => (),
+                    }
+                }
+            })
+            .build(app)?;
             let handle = app.handle().clone();
             app.deep_link().on_open_url(move |_| {
                 if let Some(win) = handle.get_webview_window("main") {
@@ -325,6 +396,8 @@ fn main() {
                 nearby::nearby_forget,
                 open_spotify,
                 open_youtube,
+                compact_player,
+                hide_to_tray,
                 spotify_callback,
                 analyze_audio,
                 vault::read_secret,

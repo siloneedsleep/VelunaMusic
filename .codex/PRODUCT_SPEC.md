@@ -1,6 +1,6 @@
 # VelunaMusic — Đặc tả sản phẩm / Product Specification
 
-Cập nhật / Updated: 18/11/2026 (Asia/Saigon).
+Cập nhật / Updated: 19/11/2026 (Asia/Saigon).
 
 Vị trí chính thức / Canonical location: `.codex/PRODUCT_SPEC.md`.
 
@@ -13,6 +13,8 @@ This document contains two complete versions: **Vietnamese** first and **English
 # Tiếng Việt
 
 ## 1. Mục tiêu và trạng thái
+
+Bản phát triển đã có thư viện local, playlist và yêu thích dùng offline, liên kết Spotify, cửa sổ YouTube, chuyển phiên, điều khiển từ xa, nhận file qua LAN và AutoMix. AI DJ chuẩn bị đặc trưng nhạc trên máy rồi chỉ gọi nhà cung cấp người dùng đã chọn gần cuối bài. Kênh điều khiển dùng tài khoản Veluna và hiện hoạt động khi ứng dụng nhận đang hiển thị. Đã thử giao thức LAN với hai tiến trình trên Windows và kênh điều khiển qua Supabase với hai máy khách thử. Nghiệm thu với điện thoại thật, tài khoản dịch vụ thật, mức dùng pin và toàn bộ các mục dưới đây vẫn đang mở.
 
 Một sản phẩm có bản Android và Windows, dành cho cá nhân và nhóm nhỏ trước. Lõi logic dùng Rust; cho phép Kotlin và API native ở phần tích hợp hệ thống. Tham khảo SimpMusic để phát triển thư viện, playback và AutoMix.
 
@@ -182,6 +184,8 @@ Mọi giới hạn dịch vụ và phiên bản API cần kiểm tra lại khi t
 # English
 
 ## 1. Goals and current status
+
+The development build includes a local library, offline playlists and favorites, Spotify linking, a dedicated YouTube window, playback handoff, remote control, LAN file receipt and AutoMix. AI DJ prepares audio features locally and contacts the selected provider near the end of the track. Remote control uses the Veluna account and currently requires the receiving app to be visible. The LAN protocol was tested between two Windows processes and remote commands were tested through Supabase with two test clients. Acceptance on a physical phone, live provider accounts, battery measurements and the full scope below remains open.
 
 One product with Android and Windows applications, initially for personal use and a small group. Shared application logic uses Rust, with Kotlin and native platform APIs allowed for system integration. Use SimpMusic as a reference for the library, playback, and AutoMix capabilities.
 
