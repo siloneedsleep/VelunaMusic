@@ -4,14 +4,22 @@
 
 A cross-platform music player for Android and Windows that combines YouTube Music, a local library, AutoMix and seamless playback handoff on a shared Rust core.
 
-[![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows-1d4ed8?style=flat-square)](#getting-started)
-[![Core](https://img.shields.io/badge/core-Rust-334155?style=flat-square&logo=rust&logoColor=white)](core)
-[![Desktop](https://img.shields.io/badge/desktop-Tauri%20v2-2563eb?style=flat-square&logo=tauri&logoColor=white)](windows)
-[![Android](https://img.shields.io/badge/android-Media3%20%2B%20JNI-475569?style=flat-square&logo=android&logoColor=white)](android)
-[![Website](https://img.shields.io/badge/website-veluna.siloneedsleep.xyz-38bdf8?style=flat-square)](https://veluna.siloneedsleep.xyz)
-[![License](https://img.shields.io/badge/license-GPL--3.0-64748b?style=flat-square)](LICENSE)
+<p>
+  <a href="README.md"><img src="https://img.shields.io/badge/English-2563EB?style=for-the-badge&logo=googletranslate&logoColor=white" alt="English" /></a>
+  <a href="README.vi.md"><img src="https://img.shields.io/badge/Ti%E1%BA%BFng%20Vi%E1%BB%87t-1E293B?style=for-the-badge&logo=googletranslate&logoColor=white" alt="Tiếng Việt" /></a>
+  &nbsp;
+  <a href="https://veluna.siloneedsleep.xyz"><img src="https://img.shields.io/badge/Website-0B1120?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Website" /></a>
+  <a href=".codex/PRODUCT_SPEC.md"><img src="https://img.shields.io/badge/Product%20Spec-0B1120?style=for-the-badge&logo=markdown&logoColor=white" alt="Product Spec" /></a>
+  <a href="https://github.com/siloneedsleep/VelunaMusic/releases"><img src="https://img.shields.io/badge/Releases-1D4ED8?style=for-the-badge&logo=github&logoColor=white" alt="Releases" /></a>
+</p>
 
-[Website](https://veluna.siloneedsleep.xyz) · [Product Spec](.codex/PRODUCT_SPEC.md) · [Releases](https://github.com/siloneedsleep/VelunaMusic/releases)
+<p>
+  <a href="#getting-started"><img src="https://img.shields.io/badge/Platform-Android%20%7C%20Windows-1D4ED8?style=flat-square&labelColor=0B1120" alt="Android | Windows" /></a>
+  <a href="core"><img src="https://img.shields.io/badge/Core-Rust-2563EB?style=flat-square&labelColor=0B1120&logo=rust&logoColor=white" alt="Rust Core" /></a>
+  <a href="windows"><img src="https://img.shields.io/badge/Desktop-Tauri%20v2-38BDF8?style=flat-square&labelColor=0B1120&logo=tauri&logoColor=white" alt="Tauri v2" /></a>
+  <a href="android"><img src="https://img.shields.io/badge/Android-Media3%20%2B%20JNI-2563EB?style=flat-square&labelColor=0B1120&logo=android&logoColor=white" alt="Media3 + JNI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-1E293B?style=flat-square&labelColor=0B1120&logo=gnu&logoColor=white" alt="GPL-3.0" /></a>
+</p>
 
 </div>
 
@@ -19,7 +27,7 @@ A cross-platform music player for Android and Windows that combines YouTube Musi
 
 ## Status
 
-VelunaMusic is under active development on the `codex/dev` branch. Builds on this branch do not publish installers or create GitHub Releases. Public downloads are enabled only after the complete [product specification](.codex/PRODUCT_SPEC.md), including accounts, handoff and AI DJ, has been validated. The specification is maintained in Vietnamese and English and records which features have been verified on physical devices and which remain open.
+Core features developed on `codex/dev` have been integrated into the `main` branch. Public releases and installers will open once physical-device acceptance validation is complete against the [product specification](.codex/PRODUCT_SPEC.md), including accounts, handoff, remote control and AI DJ. The specification is maintained in Vietnamese and English and records which features have been verified on physical devices and which remain open.
 
 ## Overview
 
@@ -162,7 +170,13 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 node --test tests/*.test.mjs
 ```
 
-The `veluna-core` integration tests contact YouTube Music and require network access. The live Supabase isolation test in `tests/` is skipped unless the `VELUNA_QA_ACCOUNTS` environment variable is set. Instrumented Android tests run with `./android/gradlew -p android connectedDebugAndroidTest` on a device or emulator. The CI workflow in `.github/workflows/check.yml` runs the Rust, Windows, Node, Android build and emulator checks.
+The live YouTube Music network integration test in `veluna-core` is marked with `#[ignore]` so CI stays reliable in datacenter environments. To run it directly on a residential/personal network:
+
+```sh
+cargo test --locked --manifest-path core/Cargo.toml -- --ignored
+```
+
+The live Supabase isolation test in `tests/` is skipped unless the `VELUNA_QA_ACCOUNTS` environment variable is set. Instrumented Android tests run with `./android/gradlew -p android connectedDebugAndroidTest` on a device or emulator. The CI workflow in `.github/workflows/check.yml` runs the Rust, Windows, Node, Android build and emulator checks.
 
 ## Privacy and Security
 
