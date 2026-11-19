@@ -2,10 +2,23 @@ const names = { windows: "VelunaMusic-Windows-x64.exe", android: "VelunaMusic-An
 const repo = "siloneedsleep/VelunaMusic";
 const status = document.getElementById("status");
 const url = "https://api.github.com/repos/" + repo + "/releases/latest";
+let display="checking", version="";
+function renderStatus(){
+  const en=document.documentElement?.lang==="en";
+  if(display==="error"){
+    status.replaceChildren(en?"Download status unavailable. ":"Chưa kiểm tra được bản tải. ");
+    const link=document.createElement("a");link.href="https://github.com/"+repo+"/releases";
+    link.textContent=en?"Check GitHub ↗":"Kiểm tra trên GitHub ↗";status.append(link);return;
+  }
+  status.textContent=display==="ready"?version+(en?" · Latest stable release on GitHub":" · Bản chính thức mới nhất trên GitHub"):
+    display==="unreleased"?(en?"In development. Downloads open with the first stable release.":"Đang phát triển. Bản tải sẽ mở khi bản phát hành đầu tiên sẵn sàng."):
+    (en?"Checking GitHub Releases…":"Đang kiểm tra GitHub Releases…");
+}
+document.addEventListener?.("veluna-language",renderStatus);
 try {
   const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
   if (res.status === 404) {
-    status.textContent = "Đang phát triển. Bản tải sẽ mở khi bản phát hành đầu tiên sẵn sàng.";
+    display="unreleased";
   } else {
     if (!res.ok) throw Error("release lookup");
     const release = await res.json();
@@ -21,12 +34,7 @@ try {
       link.href = asset.browser_download_url;
       link.removeAttribute("aria-disabled");
     }
-    status.textContent = release.tag_name + " · Bản chính thức mới nhất trên GitHub";
+    display="ready";version=release.tag_name;
   }
-} catch {
-  status.replaceChildren("Chưa kiểm tra được bản tải. ");
-  const link = document.createElement("a");
-  link.href = "https://github.com/" + repo + "/releases";
-  link.textContent = "Kiểm tra trên GitHub ↗";
-  status.append(link);
-}
+} catch {display="error";}
+renderStatus();

@@ -61,3 +61,31 @@ function lyricAt(entries,time) {
   while(low<high){const mid=(low+high)>>>1;if(entries[mid].time<=time)low=mid+1;else high=mid;}
   return low-1;
 }
+
+function hasWordTiming(entries) {
+  if (!Array.isArray(entries) || !entries.length) return false;
+  let found=false;
+  for (const entry of entries) {
+    if (!Array.isArray(entry?.parts) || !entry.parts.length) continue;
+    let prev=-1;
+    for (const part of entry.parts) {
+      if (typeof part?.time!=="number" || !Number.isFinite(part.time) || part.time<prev) return false;
+      prev=part.time;
+    }
+    found=true;
+  }
+  return found;
+}
+
+function wordProgress(entry, time) {
+  const parts=entry?.parts;
+  if (!Array.isArray(parts) || !parts.length) return {index:-1,ratio:0};
+  if (entry.end!=null && time>=entry.end) return {index:-1,ratio:1};
+  const idx=lyricAt(parts, time);
+  if (idx<0) return {index:-1,ratio:0};
+  const start=parts[idx].time;
+  const nextTime=parts[idx+1]?.time ?? entry.end;
+  if (typeof nextTime!=="number" || nextTime<=start) return {index:idx,ratio:1};
+  const ratio=Math.max(0, Math.min(1, (time-start)/(nextTime-start)));
+  return {index:idx,ratio};
+}

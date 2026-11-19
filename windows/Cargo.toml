@@ -12,6 +12,8 @@ custom-protocol = ["tauri/custom-protocol"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+tokio = { version = "1", features = ["net", "sync"] }
 tauri = { version = "2", features = ["protocol-asset", "tray-icon"] }
 rfd = "0.15"
 veluna-core = { path = "../core" }

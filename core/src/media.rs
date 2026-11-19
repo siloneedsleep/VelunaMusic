@@ -57,7 +57,7 @@ impl MediaTags {
                 _ => continue,
             };
             if let Value::String(value) = &tag.value {
-                let text = value.trim();
+                let text = value.trim_matches(|c: char| c.is_whitespace() || c == '\0');
                 if field.is_none() && !text.is_empty() {
                     *field = Some(text.chars().take(320).collect());
                 }
@@ -145,6 +145,33 @@ mod tests {
 
     fn frame(id: &[u8], bytes: &[u8]) -> Vec<u8> {
         [id, &(bytes.len() as u32).to_be_bytes(), &[0, 0], bytes].concat()
+    }
+
+    #[test]
+    fn wave_info_strings_drop_the_riff_nul_terminator() {
+        fn chunk(id: &[u8; 4], data: &[u8]) -> Vec<u8> {
+            let mut out = [id.as_slice(), &(data.len() as u32).to_le_bytes(), data].concat();
+            if !data.len().is_multiple_of(2) {
+                out.push(0);
+            }
+            out
+        }
+        let mut info = b"INFO".to_vec();
+        info.extend(chunk(b"IART", b"Veluna QA\0"));
+        info.extend(chunk(b"IPRD", b"Device Sessions\0"));
+        let mut body = b"WAVE".to_vec();
+        body.extend(chunk(
+            b"fmt ",
+            b"\x01\x00\x01\x00\x40\x1f\x00\x00\x80\x3e\x00\x00\x02\x00\x10\x00",
+        ));
+        body.extend(chunk(b"LIST", &info));
+        body.extend(chunk(b"data", &[0, 0]));
+        let path = std::env::temp_dir().join(format!("veluna-info-{}.wav", std::process::id()));
+        std::fs::write(&path, chunk(b"RIFF", &body)).unwrap();
+        let tags = read(File::open(&path).unwrap(), false).unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(tags.artist.as_deref(), Some("Veluna QA"));
+        assert_eq!(tags.album.as_deref(), Some("Device Sessions"));
     }
 
     #[test]

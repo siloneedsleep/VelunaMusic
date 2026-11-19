@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod nearby;
+mod stream_server;
 mod vault;
+mod ytmusic;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
@@ -36,17 +38,72 @@ fn open_track(app: &tauri::AppHandle, path: PathBuf) -> Option<Track> {
 }
 #[tauri::command]
 fn library(app: tauri::AppHandle) -> Result<Vec<Track>, String> {
-    let index = library_path(&app)?;
-    if !index.exists() {
-        return Ok(vec![]);
-    }
-    let paths: Vec<PathBuf> =
-        serde_json::from_slice(&std::fs::read(index).map_err(|e| e.to_string())?)
-            .map_err(|e| e.to_string())?;
-    Ok(paths
+    let mut tracks: Vec<_> = local_paths(&app)?
         .into_iter()
         .filter_map(|p| open_track(&app, p))
-        .collect())
+        .collect();
+    tracks.extend(online_tracks(&app)?);
+    Ok(tracks)
+}
+fn local_paths(app: &tauri::AppHandle) -> Result<Vec<PathBuf>, String> {
+    read_index(&library_path(app)?)
+}
+
+fn read_index<T: serde::de::DeserializeOwned>(path: &std::path::Path) -> Result<Vec<T>, String> {
+    match std::fs::read(path) {
+        Ok(data) => serde_json::from_slice(&data).map_err(|e| e.to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn online_tracks(app: &tauri::AppHandle) -> Result<Vec<Track>, String> {
+    read_index(&library_path(app)?.with_file_name("online-tracks.json"))
+}
+
+fn save_references(app: &tauri::AppHandle, incoming: Vec<Track>) -> Result<(), String> {
+    static WRITER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = WRITER.lock().map_err(|_| "Could not lock online library")?;
+    let mut saved = online_tracks(app)?;
+    for track in incoming {
+        if !track
+            .id
+            .strip_prefix("ytmusic://")
+            .is_some_and(veluna_core::ytmusic::valid_video_id)
+            || track.title.is_empty()
+            || track.title.chars().count() > 512
+        {
+            return Err("Invalid online track".into());
+        }
+        if let Some(old) = saved.iter_mut().find(|t| t.id == track.id) {
+            *old = track;
+        } else {
+            saved.push(track);
+        }
+    }
+    let path = library_path(app)?.with_file_name("online-tracks.json");
+    let temp = path.with_extension("tmp");
+    std::fs::write(
+        &temp,
+        serde_json::to_vec(&saved).map_err(|e| e.to_string())?,
+    )
+    .and_then(|_| std::fs::rename(temp, path))
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn save_online_tracks(app: tauri::AppHandle, items: Vec<Track>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || save_references(&app, items))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn library_file(app: &tauri::AppHandle, id: &str) -> Result<std::fs::File, String> {
+    let path = std::path::Path::new(id);
+    if !local_paths(app)?.iter().any(|p| p == path) {
+        return Err("Track is missing from this library".into());
+    }
+    std::fs::File::open(path).map_err(|e| e.to_string())
 }
 #[tauri::command]
 async fn media_tags(
@@ -55,14 +112,7 @@ async fn media_tags(
     artwork: bool,
 ) -> Result<veluna_core::media::MediaTags, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let index = library_path(&app)?;
-        let paths: Vec<String> =
-            serde_json::from_slice(&std::fs::read(index).map_err(|e| e.to_string())?)
-                .map_err(|e| e.to_string())?;
-        if !paths.contains(&id) {
-            return Err("Track is missing from this library".into());
-        }
-        veluna_core::media::read(std::fs::File::open(id).map_err(|e| e.to_string())?, artwork)
+        veluna_core::media::read(library_file(&app, &id)?, artwork)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -72,23 +122,15 @@ async fn analyze_audio(
     app: tauri::AppHandle,
     id: String,
 ) -> Result<veluna_core::dj::Analysis, String> {
-    if !library(app)?.iter().any(|track| track.id == id) {
-        return Err("Track is missing from this library".into());
-    }
-    tauri::async_runtime::spawn_blocking(move || {
-        veluna_core::dj::analyze(std::fs::File::open(id).map_err(|e| e.to_string())?)
-    })
-    .await
-    .map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || veluna_core::dj::analyze(library_file(&app, &id)?))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 async fn track_digest(app: tauri::AppHandle, id: String) -> Result<String, String> {
-    if !library(app)?.iter().any(|track| track.id == id) {
-        return Err("Track is missing from this library".into());
-    }
     tauri::async_runtime::spawn_blocking(move || {
-        let mut file = std::fs::File::open(id).map_err(|e| e.to_string())?;
+        let mut file = library_file(&app, &id)?;
         let mut digest = Sha256::new();
         std::io::copy(&mut file, &mut digest).map_err(|e| e.to_string())?;
         Ok(format!("{:x}", digest.finalize()))
@@ -131,7 +173,10 @@ fn import_paths(
 ) -> Result<(Vec<Track>, Vec<String>), String> {
     static WRITER: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _guard = WRITER.lock().map_err(|_| "Could not lock library")?;
-    let mut tracks = library(app.clone())?;
+    let mut tracks: Vec<_> = local_paths(app)?
+        .into_iter()
+        .filter_map(|p| open_track(app, p))
+        .collect();
     let mut ids = Vec::new();
     for path in paths {
         if let Some(t) = open_track(app, path) {
@@ -148,6 +193,7 @@ fn import_paths(
     std::fs::write(&temp, data)
         .and_then(|_| std::fs::rename(temp, index))
         .map_err(|e| e.to_string())?;
+    tracks.extend(online_tracks(app)?);
     Ok((tracks, ids))
 }
 #[derive(Deserialize)]
@@ -254,11 +300,7 @@ async fn install_update(app: tauri::AppHandle, version: String) -> Result<(), St
 }
 #[tauri::command]
 async fn open_youtube(app: tauri::AppHandle, id: String) -> Result<(), String> {
-    if id.len() != 11
-        || !id
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-    {
+    if !veluna_core::ytmusic::valid_video_id(&id) {
         return Err("Invalid YouTube video".into());
     }
     let url: tauri::Url = format!("https://veluna.siloneedsleep.xyz/watch?v={id}")
@@ -404,6 +446,13 @@ fn main() {
         })
         .invoke_handler({
             let commands: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+                ytmusic::ytm_search,
+                ytmusic::ytm_album,
+                ytmusic::ytm_artist,
+                ytmusic::ytm_lyrics,
+                ytmusic::ytm_stream,
+                ytmusic::ytm_refresh_stream,
+                save_online_tracks,
                 library,
                 add_music,
                 pick_album,

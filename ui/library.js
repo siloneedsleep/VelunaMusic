@@ -31,6 +31,10 @@
   }
   async function read(id, artwork) {
     if (native) return nativeTransfer(artwork ? "readCover" : "readTags", id);
+    if (desktop && id.startsWith("ytmusic://")){
+      const meta=window.velunaYtm?.metaForId(id) || tracks.find(t=>t.id===id) || {};
+      return {...meta,cover:artwork?meta.thumbnail:null};
+    }
     if (desktop) return desktop.invoke("media_tags", {id,artwork});
   }
   function orderedAlbum(key){
@@ -115,7 +119,11 @@
         button.append(image,caption);
         if(item.sub){const by=document.createElement("small");by.textContent=item.sub;button.append(by);}
         button.onclick=()=>{
-          if(!item.key){loadTrack(item.id,true);return;}
+          if(!item.key){
+            if(window.velunaMotion?.transitionCover)window.velunaMotion.transitionCover(image,cover,()=>loadTrack(item.id,true),el("title"));
+            else loadTrack(item.id,true);
+            return;
+          }
           select(buttons.find(b=>b.dataset.view==="album"),item.key);
         };
         rail.append(button);
@@ -126,23 +134,65 @@
   }
   window.addEventListener("scroll",visibleCovers,{passive:true});
   window.addEventListener("resize",visibleCovers,{passive:true});
+  function syncYtmTags() {
+    for (const t of tracks) {
+      if (t.source !== "ytmusic" && !String(t.id || "").startsWith("ytmusic://")) continue;
+      const existing = tags.get(t.id) || {};
+      const cached = window.velunaYtm?.metaForId?.(t.id) || {};
+      const albumName = typeof t.album === "object" && t.album ? (t.album.name || "") : (t.album || cached.album || existing.album || "");
+      tags.set(t.id, {
+        ...existing,
+        ...cached,
+        title: t.title || cached.title || existing.title,
+        artist: t.artist || t.artist_text || cached.artist || existing.artist || "",
+        album: albumName,
+        source: "ytmusic",
+        recording_kind: t.recording_kind || cached.recording_kind || existing.recording_kind || "original",
+        recording_label: t.recording_label || cached.recording_label || existing.recording_label || "Bản gốc",
+        codec: t.codec || cached.codec || existing.codec,
+        bitrate: t.bitrate || cached.bitrate || existing.bitrate,
+        bitrate_kbps: t.bitrate_kbps || cached.bitrate_kbps || existing.bitrate_kbps,
+        sample_rate: t.sample_rate || cached.sample_rate || existing.sample_rate,
+        expires_at: t.expires_at || cached.expires_at || existing.expires_at,
+        cover: t.thumbnail || cached.thumbnail || existing.cover
+      });
+    }
+  }
   function showTrack() {
     const current = tracks.find(t=>t.id===selected);
+    const meta = tags.get(selected);
     el("title").textContent = current ? label(current) : "Chọn một bài hát";
-    el("now-artist").textContent = current ? [tags.get(selected)?.artist,tags.get(selected)?.album].filter(Boolean).join(" · ") : "";
+    const ytmBadge = meta?.source === "ytmusic"
+      ? ["YouTube Music", meta.recording_label, window.velunaYtm?.formatQuality?.(meta)].filter(Boolean).join(" · ")
+      : "";
+    el("now-artist").textContent = current ? [meta?.artist, meta?.album, ytmBadge].filter(Boolean).join(" · ") : "";
+    if (typeof updateNowBadges === "function") updateNowBadges(current, meta);
   }
   async function artwork(id) {
     coverData = null; cover.src = "icon.png";
+    if (el("mini-cover")) el("mini-cover").src = "icon.png";
+    window.velunaMotion?.clearCoverPalette?.();
     if (!id) return;
+    const directCover = tags.get(id)?.cover;
+    if (directCover) {
+      coverData = directCover;
+      cover.src = coverData;
+      if (el("mini-cover")) el("mini-cover").src = coverData;
+      window.velunaMotion?.applyCoverPalette?.(cover);
+    }
     try {
       const data = await read(id,true);
       if (!data || id!==selected || id!==coverId) return;
       const {cover:image,...text} = data;
-      tags.set(id,text);
-      coverData = image || null;
-      if (coverData) cover.src = coverData;
+      tags.set(id,{...(tags.get(id) || {}), ...text});
+      coverData = image || directCover || null;
+      if (coverData) {
+        cover.src = coverData;
+        if (el("mini-cover")) el("mini-cover").src = coverData;
+        window.velunaMotion?.applyCoverPalette?.(cover);
+      }
       showTrack(); groupChoices(); drawList();
-    } catch { /* The filename and app artwork remain available for untagged files. */ }
+    } catch {}
   }
   cover.onerror = () => { if (coverData) {coverData=null;cover.src="icon.png";} };
   function favoritesChanged() {
@@ -171,12 +221,15 @@
     } else if (grouped() && group) result = tracks.filter(t=>groupOf(t)===group);
     return result.map(t=>{
       const meta=tags.get(t.id);
-      const subtitle=view==="popular" ? history.get(t.id).count+" lượt phát" : [meta?.artist,meta?.album].filter(Boolean).join(" · ");
+      const ytmMeta=meta?.source==="ytmusic" || String(t.id).startsWith("ytmusic://")
+        ? ["YouTube Music", meta?.recording_label, window.velunaYtm?.formatQuality?.(meta)].filter(Boolean).join(" · ")
+        : "";
+      const subtitle=view==="popular" ? history.get(t.id).count+" lượt phát" : [meta?.artist,meta?.album,ytmMeta].filter(Boolean).join(" · ");
       return {id:t.id,title:label(t),subtitle,queueIndex:t.queueIndex};
     }).filter(t=>!query || (t.title+" "+t.subtitle).toLocaleLowerCase().includes(query));
   }
   function refresh() {
-    favoritesChanged(); showTrack();
+    syncYtmTags(); favoritesChanged(); showTrack();
     if (selected!==coverId && !document.hidden) { coverId=selected; artwork(selected); }
     if (["home","popular","recent"].includes(view)) nativeHistory();
     shelves();

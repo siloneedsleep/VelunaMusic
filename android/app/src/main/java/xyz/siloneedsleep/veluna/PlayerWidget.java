@@ -44,8 +44,15 @@ public final class PlayerWidget extends AppWidgetProvider {
         super.onReceive(context,intent);String action=intent.getAction();
         if(action==null || !action.startsWith(PREFIX))return;
         PendingResult pending=goAsync();
-        SessionToken token=new SessionToken(context,new ComponentName(context,PlaybackService.class));
-        ListenableFuture<MediaController> connection=new MediaController.Builder(context,token).buildAsync();
+        Context application=context.getApplicationContext();
+        SessionToken token=new SessionToken(application,new ComponentName(application,PlaybackService.class));
+        ListenableFuture<MediaController> connection;
+        try {
+            connection=new MediaController.Builder(application,token).buildAsync();
+        } catch (RuntimeException unavailable) {
+            pending.finish();
+            return;
+        }
         connection.addListener(()->{
             try {
                 MediaController p=connection.get();
@@ -55,12 +62,12 @@ public final class PlayerWidget extends AppWidgetProvider {
                     case "toggle":
                         if(p.isPlaying())p.pause();
                         else if(p.getMediaItemCount()>0){p.prepare();p.play();}
-                        else context.startActivity(new Intent(context,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                        else application.startActivity(new Intent(application,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                         break;
                     default:break;
                 }
             }catch(Exception ignored){}
             finally{MediaController.releaseFuture(connection);pending.finish();}
-        },ContextCompat.getMainExecutor(context));
+        },ContextCompat.getMainExecutor(application));
     }
 }

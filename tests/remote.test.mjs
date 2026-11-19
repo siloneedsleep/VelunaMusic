@@ -74,3 +74,31 @@ test("live Supabase private broadcast and account isolation",{skip:!process.env.
     await until(()=>denied || allowed);assert.equal(denied,true);
   }finally{ws.close();}
 });
+
+
+test("live durable command survives reconnect and remains private to the account",{skip:!process.env.VELUNA_QA_ACCOUNTS},async()=>{
+  const accounts=JSON.parse(process.env.VELUNA_QA_ACCOUNTS);
+  async function client(account){
+    const headers={apikey:config.publishableKey,"Content-Type":"application/json"};
+    const login=await fetch(config.url+"/auth/v1/token?grant_type=password",{method:"POST",headers,body:JSON.stringify({email:account.email,password:account.pw})});
+    assert.equal(login.status,200);
+    headers.Authorization="Bearer "+(await login.json()).access_token;
+    return async(path,body)=>{
+      const res=await fetch(config.url+"/rest/v1/"+path,{method:body?"POST":"GET",headers,body:body?JSON.stringify(body):undefined});
+      assert.ok(res.ok,"Cloud request failed with "+res.status);
+      const raw=await res.text();return raw?JSON.parse(raw):null;
+    };
+  }
+  const [request,other]=await Promise.all(accounts.map(client)),id=webcrypto.randomUUID();
+  const [sender,recipient]=[webcrypto.randomUUID(),webcrypto.randomUUID()];
+  const rows=[{device_id:sender,label:"QA PC",platform:"windows"},{device_id:recipient,label:"QA phone",platform:"android"}];
+  await request("veluna_devices",rows);
+  const op={p_id:id,p_sender:sender,p_recipient:recipient,p_instance:webcrypto.randomUUID(),p_version:webcrypto.randomUUID(),
+    p_action:"move",p_value:1,p_destination:0,p_deadline:new Date(Date.now()+60000).toISOString()};
+  await request("rpc/veluna_command",op);await request("rpc/veluna_command",op);
+  const filter="veluna_commands?select=id,result&id=eq."+id;
+  assert.equal((await request(filter+"&expires_at=gt.now")).length,1);
+  assert.deepEqual(await other(filter),[]);
+  await request("rpc/veluna_command_ack",{p_id:id,p_recipient:recipient,p_result:""});
+  assert.equal((await request(filter))[0].result,"");
+});

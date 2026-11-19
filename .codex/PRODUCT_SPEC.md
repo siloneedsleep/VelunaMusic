@@ -14,9 +14,9 @@ This document contains two complete versions: **Vietnamese** first and **English
 
 ## 1. Mục tiêu và trạng thái
 
-Bản phát triển đã có thư viện local, playlist và yêu thích dùng offline, liên kết Spotify, cửa sổ YouTube, chuyển phiên, điều khiển từ xa, nhận file qua LAN và AutoMix. AI DJ chuẩn bị đặc trưng nhạc trên máy rồi chỉ gọi nhà cung cấp người dùng đã chọn gần cuối bài. Kênh điều khiển dùng tài khoản Veluna và hiện hoạt động khi ứng dụng nhận đang hiển thị. Đã thử giao thức LAN với hai tiến trình trên Windows và kênh điều khiển qua Supabase với hai máy khách thử. Nghiệm thu với điện thoại thật, tài khoản dịch vụ thật, mức dùng pin và toàn bộ các mục dưới đây vẫn đang mở.
+Bản phát triển đã có thư viện local, playlist và yêu thích dùng offline, liên kết Spotify, cửa sổ YouTube, chuyển phiên, điều khiển từ xa, nhận file qua LAN và AutoMix. AI DJ chuẩn bị đặc trưng nhạc trên máy rồi chỉ gọi nhà cung cấp người dùng đã chọn gần cuối bài. Android nhận lệnh bằng PlaybackService khi người nghe bật điều khiển. Supabase lưu lệnh có thời hạn và máy nhận đọc lại khi mạng trở lại. Trên Samsung SM-A376B chạy Android 17, Veluna phát WAV dưới nền trong 170 giây và giữ nguyên tiến trình. Kéo thả bài 3.840.122 byte qua Wi-Fi sang bản Windows đã cài cho kết quả SHA-256 trùng bản gốc và bài xuất hiện trong thư viện PC. Đã thử widget tạm dừng/phát tiếp trên máy thật và điều khiển Supabase với hai máy khách thử. Điện thoại cắm USB trong phép thử. Nghiệm thu dịch vụ bằng tài khoản thật và đo pin khi rút sạc vẫn đang mở.
 
-Bản phát triển tích hợp tài nguyên SimpMusic 2.6.0 theo GPL-3.0, thư viện theo album/nghệ sĩ, lịch sử phát trên thiết bị, ảnh bìa nhúng, chỉnh thứ tự hàng chờ, lời theo từ với độ trễ riêng từng bài và crossfade cố định 1–30 giây. DJ nhận trực tiếp album đã lập chỉ mục và xếp theo số đĩa, số bài trong metadata khi có. Các mức dài được giới hạn theo thời lượng bài. Poppins dùng SIL OFL 1.1.
+Bản phát triển tích hợp tài nguyên SimpMusic 2.6.0 theo GPL-3.0, thư viện theo album/nghệ sĩ, lịch sử phát trên thiết bị, ảnh bìa nhúng, chỉnh thứ tự hàng chờ, lời theo từ với độ trễ riêng từng bài và crossfade cố định 1–30 giây. DJ nhận trực tiếp album đã lập chỉ mục và xếp theo số đĩa, số bài trong metadata khi có. Các mức dài được giới hạn theo thời lượng bài. Khi EQ và AutoMix tắt, Android ưu tiên đường phát tiết kiệm điện bằng phần cứng nếu định dạng và đầu ra hỗ trợ. Poppins dùng SIL OFL 1.1.
 
 Một sản phẩm có bản Android và Windows, dành cho cá nhân và nhóm nhỏ trước. Lõi logic dùng Rust; cho phép Kotlin và API native ở phần tích hợp hệ thống. Tham khảo SimpMusic để phát triển thư viện, playback và AutoMix.
 
@@ -25,6 +25,13 @@ Toàn bộ tính năng trong tài liệu thuộc phạm vi bản phát hành đ�
 Ba ưu tiên: nghe nhạc ổn định, cá nhân hóa sâu, phát nền ít hao điện. Giao diện khi mở app có animation nổi bật; công việc không cần thiết phải nghỉ khi xuống nền.
 
 Các quyết định người dùng đã chọn: một sản phẩm có hai bản Android/Windows; lõi Rust kết hợp native; nguồn YouTube và nhạc local, bổ sung Spotify; phát hành cho cá nhân/nhóm nhỏ trước; ưu tiên Spotify phát trong app; chuyển máy và remote với một máy phát chính. Các chi tiết mang nhãn “đề xuất”, framework UI, nhà cung cấp/model LLM và ngưỡng benchmark chưa được xem là quyết định cuối cùng. Supabase Singapore lưu dữ liệu tài khoản.
+
+### Tích hợp trên nhánh phát triển, 19/11/2026
+
+- Dịch vụ Android sở hữu kênh Realtime, kết nối lại và kiểm tra phiên tài khoản. Play/Pause, tua, âm lượng và chọn bài có thời hạn ngắn. Đổi thứ tự hàng chờ dùng ID thao tác, phiên phát và phiên bản hàng chờ. Khi xung đột, người nghe có thể chọn lại hoặc bỏ thao tác.
+- Khi nhận Handoff, Android chuẩn bị một player im lặng để kiểm tra nguồn có phát và tua được. File local dùng SHA-256. Bài YouTube Music dùng mã bài và được mở lại trên thiết bị đích. Thiết bị gửi chỉ tạm dừng sau bước ready. Android có thể hoãn mạng trong Deep Doze. Khả năng nhận ngay lúc mạng bị đình chỉ và số liệu pin rút sạc vẫn chưa được xác nhận.
+- Windows có lệnh Tauri cho tìm kiếm, album, nghệ sĩ, lời, stream và refresh. Codec/bitrate lấy từ metadata nguồn. Phiên kéo thả LAN truyền file local hoặc mã bài online qua kết nối đã ghép đôi. Khi nguồn không cấp stream trực tiếp, người nghe có thể phát bằng trình YouTube. Tìm kiếm và lưu thư viện đã được kiểm tra trên WebView2 thật. Luồng phát audio trực tiếp chưa được xác nhận với bài thử trong WebView2.
+- Đã thử lệnh thật qua hai tài khoản Supabase tách biệt và UI giới thiệu ở chiều rộng 360, 768, 1440 px bằng tiếng Việt và tiếng Anh. Phép thử màn hình tắt trên Samsung ở trên thuộc bản trước. Nghiệm thu Handoff và Remote của bản mới giữa hai máy thật vẫn mở.
 
 ## 2. Nguồn nhạc, thư viện và chất lượng
 
@@ -187,9 +194,9 @@ Mọi giới hạn dịch vụ và phiên bản API cần kiểm tra lại khi t
 
 ## 1. Goals and current status
 
-The development build integrates GPL-3.0 resources from SimpMusic 2.6.0, album and artist browsing, device-local listening history, embedded covers, queue reordering, word-timed lyrics with per-track offset and fixed crossfade presets from 1 to 30 seconds. DJ accepts an indexed album directly and follows its embedded disc and track numbers where present. Long fades are bounded by track duration. Poppins is licensed under SIL OFL 1.1.
+The development build integrates GPL-3.0 resources from SimpMusic 2.6.0, album and artist browsing, device-local listening history, embedded covers, queue reordering, word-timed lyrics with per-track offset and fixed crossfade presets from 1 to 30 seconds. DJ accepts an indexed album directly and follows its embedded disc and track numbers where present. Long fades are bounded by track duration. With EQ and AutoMix off, Android requests hardware audio offload when the format and output support it. Poppins is licensed under SIL OFL 1.1.
 
-The development build includes a local library, offline playlists and favorites, Spotify linking, a dedicated YouTube window, playback handoff, remote control, LAN file receipt and AutoMix. AI DJ prepares audio features locally and contacts the selected provider near the end of the track. Remote control uses the Veluna account and currently requires the receiving app to be visible. The LAN protocol was tested between two Windows processes and remote commands were tested through Supabase with two test clients. Acceptance on a physical phone, live provider accounts, battery measurements and the full scope below remains open.
+The development build includes a local library, offline playlists and favorites, Spotify linking, a dedicated YouTube window, playback handoff, remote control, LAN file receipt and AutoMix. AI DJ prepares audio features locally and contacts the selected provider near the end of the track. When remote listening is enabled, Android receives commands in PlaybackService. Supabase retains unexpired commands for delivery after connectivity returns. A Samsung SM-A376B running Android 17 played a WAV in the background for 170 seconds in the same process. Dragging a 3,840,122-byte track over Wi-Fi to the installed Windows player produced an identical SHA-256 and a playable library entry. Widget pause/resume was tested on the phone. Remote commands were tested through Supabase with two test clients. The phone was connected to USB for this test. Live provider acceptance and unplugged battery measurements remain open.
 
 One product with Android and Windows applications, initially for personal use and a small group. Shared application logic uses Rust, with Kotlin and native platform APIs allowed for system integration. Use SimpMusic as a reference for the library, playback, and AutoMix capabilities.
 
@@ -198,6 +205,13 @@ All feature groups are in scope for the first release. Android and Windows devel
 Three priorities: reliable listening, extensive personalization, and low energy consumption during background playback. The visible application should have expressive animation; unnecessary work must stop when it moves into the background.
 
 Confirmed user choices: one product with Android/Windows versions; a Rust core with native integration; YouTube and local music plus Spotify; personal/small-group release first; prioritize in-app Spotify playback; handoff and remote control with one primary playback device. Details labeled “proposed,” the UI framework, LLM provider/model, and benchmark thresholds are not final decisions. Supabase in Singapore hosts VelunaMusic accounts.
+
+### Development branch integration, 19 November 2026
+
+- The Android playback service owns Realtime, reconnects and checks the account session. Transport, seek, volume and track selection expire quickly. Queue moves carry an operation ID, playback instance and queue version. Conflicts offer re-selection or discard.
+- The Android handoff recipient prepares a silent player and checks seekability. Local tracks use SHA-256, and YouTube Music references resolve on the destination. The source pauses after ready. Android can defer networking during deep Doze. Immediate delivery during suspension and unplugged battery consumption remain unverified.
+- Windows exposes Tauri search, album, artist, lyrics, stream and refresh commands. Quality comes from provider metadata. Paired LAN transfers carry local files or online track IDs. The YouTube player is available when the provider does not supply a direct stream. Search and library persistence were checked in WebView2. Direct audio decoding of the sampled track remains unverified in WebView2.
+- Live checks used two isolated Supabase accounts. Browser checks covered Vietnamese and English at widths of 360, 768 and 1440 pixels. The Samsung screen-off measurement above is from the previous build. Remote and Handoff acceptance between two physical devices on this revision remains open.
 
 ## 2. Music sources, library, and quality
 

@@ -22,3 +22,14 @@ test("repeated plain lines stay sorted and invalid word timing gives a line numb
   assert.throws(()=>api.parseLyrics("[00:02]a\n[00:91]b",true),/2/);
   assert.equal(api.parseLyrics("I <3 music",true)[0].time,null);
 });
+test("word timing detection and continuous word progress work only for valid word timestamps",()=>{
+  const synced=api.parseLyrics("[00:01.00] <00:01.00>Hello <00:02.00>world<00:03.00>",true);
+  const lineOnly=api.parseLyrics("[00:01.00] Line one\n[00:03.00] Line two",true);
+  const plain=api.parseLyrics("Plain text line",true);
+  assert.equal(api.hasWordTiming(synced),true);
+  assert.equal(api.hasWordTiming(lineOnly),false);
+  assert.equal(api.hasWordTiming(plain),false);
+  assert.deepEqual({...api.wordProgress(synced[0],1.5)},{index:0,ratio:0.5});
+  assert.deepEqual({...api.wordProgress(synced[0],2.25)},{index:1,ratio:0.25});
+  assert.deepEqual({...api.wordProgress(synced[0],3.1)},{index:-1,ratio:1});
+});
