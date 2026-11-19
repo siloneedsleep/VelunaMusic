@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VelunaMusic",
+  "version": "0.1.0",
+  "identifier": "xyz.siloneedsleep.veluna",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "VelunaMusic",
+        "width": 1140,
+        "height": 760,
+        "minWidth": 540,
+        "minHeight": 500
+      }
+    ],
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      },
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src 'self' asset: http://asset.localhost; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost https://vkzrgfiopdnujookplbv.supabase.co wss://vkzrgfiopdnujookplbv.supabase.co https://api.openai.com https://openrouter.ai https://accounts.spotify.com https://api.spotify.com"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "assets/app_icon.ico"
+    ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "velunamusic"
+        ]
+      }
+    }
+  }
+}

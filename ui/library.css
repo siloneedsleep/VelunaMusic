@@ -1,0 +1,60 @@
+@font-face {
+  font-family:Poppins;src:url("simpmusic/poppins-regular.ttf") format("truetype");font-style:normal;font-weight:400;font-display:swap
+}
+@font-face {
+  font-family:Poppins;src:url("simpmusic/poppins-bold.ttf") format("truetype");font-style:normal;font-weight:700;font-display:swap
+}
+body {font-family:Poppins,"Segoe UI",sans-serif}
+header,main,#message {width:min(1390px,95vw)}
+main {grid-template-columns:minmax(148px,.62fr) minmax(0,2.15fr) minmax(245px,1.1fr);gap:clamp(12px,1.6vw,24px)}
+.library-rail {display:grid;position:sticky;top:14px;gap:.35rem;padding:.5rem;
+  border:1px solid rgb(184 225 255 / calc(var(--glass-border,22)/100));border-radius:calc(var(--glass-radius,16)*1px);
+  background-color:color-mix(in srgb,var(--glass-tint,#19374f) calc(var(--glass-opacity,78)*1%),transparent);
+  backdrop-filter:blur(calc(var(--glass-blur,12)*1px));color:var(--glass-text,#ecf6ff);
+  box-shadow:inset 0 1px rgb(236 250 255 / calc(var(--glass-highlight,8)/100)),0 4px 14px rgb(3 13 32 / calc(var(--glass-shadow,18)/100))}
+.library-rail button {display:flex;align-items:center;gap:.7rem;text-align:start;font-size:.88em;background-color:transparent;box-shadow:none;border-color:transparent;padding:.68rem .62rem;white-space:nowrap}
+.library-rail [aria-pressed=true],#now-favorite[aria-pressed=true] {color:var(--accent);background-color:color-mix(in srgb,var(--accent) 14%,transparent);border-color:color-mix(in srgb,var(--accent) 42%,transparent)}
+.glyph,.transport button::before,.track-tools button::before {display:inline-block;flex:none;content:"";width:1.28em;height:1.28em;background:currentColor;mask:var(--glyph) center/contain no-repeat;-webkit-mask:var(--glyph) center/contain no-repeat}
+.transport button,.track-tools button {display:inline-flex;align-items:center;justify-content:center;gap:.35rem}
+#prev {--glyph:url(simpmusic/previous.svg)} #play {--glyph:url(simpmusic/play.svg);font-size:1.48em} #next {--glyph:url(simpmusic/next.svg)}
+body[data-playing=true] #play {--glyph:url(simpmusic/pause.svg)}
+#now-favorite {--glyph:url(simpmusic/favorite.svg)} #open-lyrics {--glyph:url(simpmusic/lyrics.svg)}
+.track-tools {display:flex;gap:.45rem;justify-content:center;margin:1rem 0 .4rem;flex-wrap:wrap}
+.track-tools button {padding:.42rem .65rem;font-size:.82em}
+#cover {aspect-ratio:1;object-fit:cover}
+aside h2,#now-artist {overflow-wrap:anywhere}
+#now-artist,.row small {opacity:.78;font-size:.85em}
+.row {flex-wrap:wrap;align-items:center;gap:.3rem .65rem;min-height:44px}
+.row small {margin-inline-start:auto}
+.queue-item {display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:.2rem}
+.queue-item>button:not(.row){padding:.4rem}
+#group-picker {margin-top:.65rem} #library-group{max-width:100%}
+.lyric-toolbar {display:flex;gap:.25rem;align-items:center;justify-content:center;flex-wrap:wrap;margin:.7rem 0}
+.lyric-toolbar button {padding:.3rem .55rem} #lyrics-offset {min-width:5ch;text-align:center;font-variant-numeric:tabular-nums}
+#lyrics-lines button.lyric-line {background:transparent;border:0;backdrop-filter:none;box-shadow:none;color:inherit;width:100%;font:inherit;text-align:inherit;white-space:pre-wrap;padding:.18rem .1rem;margin:0}
+.lyric-line .sung {color:var(--glass-text,#fff);text-shadow:0 0 .65em var(--accent);text-decoration:underline;text-underline-offset:.18em}
+#lyrics-dialog {width:min(800px,94vw);max-width:94vw;max-height:90dvh}
+#lyrics-dialog #lyrics-lines {max-height:60dvh;font-size:clamp(1.25rem,3.2vw,2.3rem);line-height:1.55}
+#prefs pre {white-space:pre-wrap;overflow-wrap:anywhere;max-height:15rem;overflow:auto;font-size:.8em}
+body[data-mini=true] .library-rail,body[data-mini=true] .track-tools,body[data-mini=true] #now-artist {display:none}
+@media(max-width:960px) {
+  main {grid-template-columns:minmax(0,1.5fr) minmax(230px,1fr)}
+  .library-rail {grid-column:1/-1;position:static;display:flex;overflow:auto;gap:.1rem}
+}
+@media(max-width:690px) {
+  main {grid-template-columns:minmax(0,1fr)}
+  .library-rail {grid-row:2;grid-column:1}
+  .library-rail button {min-height:42px}
+  .track-tools {margin:.5rem 0 0}
+  #cover {max-width:24vw} .heading h1 {font-size:1.5em}
+}
+
+#home-shelves h2 {font-size:1.12em;margin:.8rem 0 .4rem}
+.album-strip {display:flex;gap:.65rem;overflow-x:auto;padding:2px 2px .6rem;scroll-snap-type:x proximity}
+.album-card {text-align:start;padding:.35rem;border-radius:calc(var(--glass-radius,16)*1px);flex:0 0 clamp(110px,10vw,155px);min-width:0;scroll-snap-align:start}
+.album-card img {display:block;width:100%;aspect-ratio:1;object-fit:cover;border-radius:.55em}
+.album-card b,.album-card small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 .2em}
+.album-card b{margin-top:.4em;font-size:.86em}.album-card small{font-size:.73em;opacity:.75}
+@media(prefers-reduced-motion:no-preference){
+  body[data-motion=on][data-intensity=full] .album-card:focus-visible img,body[data-motion=on][data-intensity=full] .album-card:hover img {transform:scale(.96) rotate(-1deg);transition:transform .22s ease-out}
+}
