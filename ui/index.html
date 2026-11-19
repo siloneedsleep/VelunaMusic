@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#07172e">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost https://vkzrgfiopdnujookplbv.supabase.co wss://vkzrgfiopdnujookplbv.supabase.co https://api.openai.com https://openrouter.ai https://accounts.spotify.com https://api.spotify.com; frame-src 'none'; object-src 'none'; base-uri 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://lh3.googleusercontent.com https://i.ytimg.com https://yt3.ggpht.com; media-src 'self' asset: http://asset.localhost http://127.0.0.1:*; connect-src 'self' ipc: http://ipc.localhost https://vkzrgfiopdnujookplbv.supabase.co wss://vkzrgfiopdnujookplbv.supabase.co https://api.openai.com https://openrouter.ai https://accounts.spotify.com https://api.spotify.com; frame-src 'none'; object-src 'none'; base-uri 'none'">
   <title>VelunaMusic</title>
   <link rel="stylesheet" href="player.css">
   <link rel="stylesheet" href="theme.css">
@@ -23,13 +23,14 @@
   <script src="library.js" defer></script>
   <script src="listening.js" defer></script>
   <script src="sound.js" defer></script>
+  <script src="remote-mailbox.js" defer></script>
   <script src="remote.js" defer></script>
   <script src="account.js" defer></script>
 </head>
 <body>
   <header>
     <div class="brand"><img src="icon.png" width="36" height="36" alt="">VelunaMusic</div>
-    <nav><button id="nearby">Thiết bị gần</button> <button id="dj">DJ</button> <button id="account">Tài khoản</button> <button id="settings">Cài đặt</button></nav>
+    <nav><button id="motion-toggle" type="button" aria-pressed="false">Giảm chuyển động</button> <button id="nearby">Thiết bị gần</button> <button id="dj">DJ</button> <button id="account">Tài khoản</button> <button id="settings">Cài đặt</button></nav>
   </header>
   <main>
     <nav class="library-rail" aria-label="Duyệt thư viện">
@@ -60,14 +61,24 @@
         <p role="status" id="playlist-status"></p>
       </details>
       <details class="source-library"><summary>YouTube / YouTube Music</summary>
+        <form id="ytm-search-form">
+          <label class="search">Tìm kiếm YouTube Music<input id="ytm-query" type="search" required placeholder="Tên bài hát, live, remix, album, nghệ sĩ…"></label>
+          <label>Phân loại <select id="ytm-filter"><option value="all">Tất cả</option><option value="songs">Bài hát</option><option value="videos">Video</option><option value="albums">Album</option><option value="artists">Nghệ sĩ</option></select></label>
+          <button type="submit">Tìm YouTube Music</button>
+        </form>
+        <p id="ytm-status" role="status"></p>
+        <div id="ytm-detail" hidden></div>
+        <div id="ytm-results"></div>
         <form id="youtube-form"><label class="search">Liên kết video<input id="youtube-url" type="url" required placeholder="https://music.youtube.com/watch?v=…"></label>
           <label class="search">Tên hiển thị<input id="youtube-name" maxlength="160" placeholder="Tên bài hát"></label><button type="submit">Lưu vào thư viện</button></form>
         <p id="youtube-status" role="status"></p><div id="youtube-list"></div>
       </details>
     </section>
-    <aside>
-      <img id="cover" src="icon.png" alt="" width="220" height="220">
-      <p>Đang nghe</p><h2 id="title">Chọn một bài hát</h2><div id="now-artist"></div>
+    <aside id="now-playing">
+      <div class="cover-stage"><img id="cover" src="icon.png" alt="" width="220" height="220" crossorigin="anonymous"></div>
+      <p>Đang nghe</p><h2 id="title" tabindex="-1">Chọn một bài hát</h2><div id="now-artist"></div>
+      <div id="now-badges" class="meta-badges"><span id="now-source-badge" class="badge" hidden></span><span id="now-quality-badge" class="badge" hidden></span></div>
+      <div id="now-visualizer" class="visualizer" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
       <input id="seek" aria-label="Vị trí phát" type="range" min="0" max="0" value="0">
       <div class="time"><span id="elapsed">0:00</span><span id="duration">0:00</span></div>
       <div class="transport">
@@ -75,7 +86,7 @@
         <button id="play" aria-label="Phát hoặc tạm dừng"></button>
         <button id="next" aria-label="Bài kế"></button>
       </div>
-      <div class="track-tools"><button id="now-favorite" disabled aria-pressed="false">Yêu thích</button> <button id="open-lyrics">Lời bài hát</button></div>
+      <div class="track-tools"><button id="now-favorite" disabled aria-pressed="false">Yêu thích</button> <button id="open-lyrics">Lời bài hát</button> <button id="collapse-mini" type="button" aria-pressed="false">Mini player</button></div>
       <div id="window-tools" hidden><button id="mini-player">Thu gọn</button><button id="tray-player">Ẩn xuống khay</button></div>
       <details class="listening"><summary>Tùy chọn phát và lời bài hát</summary>
         <label>Lặp <select id="repeat-mode"><option value="off">Tắt</option><option value="all">Hàng chờ</option><option value="one">Một bài</option></select></label>
@@ -94,6 +105,17 @@
       </details>
     </aside>
   </main>
+  <section id="mini-bar" class="mini-player" aria-label="Trình phát nổi" hidden>
+    <button id="mini-expand" type="button" class="mini-main" aria-label="Mở trình phát đầy đủ">
+      <img id="mini-cover" src="icon.png" alt="" width="44" height="44" crossorigin="anonymous">
+      <span class="mini-text"><strong id="mini-title">Chọn một bài hát</strong><small id="mini-meta"></small></span>
+    </button>
+    <div id="mini-visualizer" class="visualizer" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+    <div class="mini-actions">
+      <button id="mini-play" type="button" aria-label="Phát hoặc tạm dừng"></button>
+      <button id="mini-next" type="button" aria-label="Bài kế"></button>
+    </div>
+  </section>
   <p role="status" id="message"></p>
   <div id="nearby-drop" hidden>Thả bài để gửi sang PC</div>
   <dialog id="lyrics-dialog" aria-labelledby="lyrics-title"><h2 id="lyrics-title">Lời bài hát</h2><button id="lyrics-close">Đóng</button></dialog>
@@ -157,13 +179,14 @@
           <button id="accept-transfer">Nhận trên máy này</button><button id="decline-transfer">Từ chối</button>
         </section>
         <h3>Điều khiển từ xa</h3>
-        <label><input id="remote-listen" type="checkbox"> Cho phép điều khiển máy này</label>
+        <label><input id="remote-listen" type="checkbox"> Cho phép điều khiển và tự nhận phiên nghe trên máy này</label>
         <label>Máy phát <select id="remote-device"></select></label>
         <div id="remote-controls"><button data-command="play">Phát</button><button data-command="pause">Dừng phát</button>
           <button data-command="previous">Trước</button><button data-command="next">Sau</button>
           <label>Vị trí <input id="remote-seek" type="range" min="0" max="0" step="1"></label>
           <label>Âm lượng máy phát <input id="remote-volume" type="range" min="0" max="100"></label>
-          <label>Hàng chờ máy phát <select id="remote-queue"></select></label><button data-command="select">Phát bài đã chọn</button></div>
+          <label>Hàng chờ máy phát <select id="remote-queue"></select></label><button data-command="select">Phát bài đã chọn</button><button data-command="up">Đưa lên</button><button data-command="down">Đưa xuống</button></div>
+        <div id="remote-conflict" hidden><p>Hàng chờ đã thay đổi. Chọn lại bài và vị trí trên hàng chờ mới, hoặc bỏ thao tác cũ.</p><button id="remote-reselect">Chọn lại</button><button id="remote-discard">Bỏ thao tác</button></div>
         <p id="remote-status" role="status"></p>
         <h3>Đồng bộ giao diện</h3>
         <button id="push-theme">Lưu giao diện từ máy này</button><button id="pull-theme">Nhận giao diện từ tài khoản</button>
@@ -203,7 +226,8 @@
       <option value="lyrics">Lời bài hát</option><option value="drop">Ô nhận bài</option><option value="playlist">Playlist</option>
       <option value="notice">Thông báo cập nhật</option><option value="transport">Điều khiển phát</option>
     </select></label>
-    <label>Kiểu kính <select id="glass-preset"><option value="">Tùy chỉnh</option><option value="clear">Trong</option><option value="frost">Mờ</option><option value="dark">Tối</option><option value="solid">Màu đặc</option></select></label>
+    <label>Kiểu kính <select id="glass-preset"><option value="">Tùy chỉnh</option><option value="clear">Kính trong</option><option value="frost">Kính mờ</option><option value="dark">Kính tối</option><option value="solid">Màu đặc</option></select></label>
+    <div id="glass-preset-bar" class="preset-bar" role="group" aria-label="Mẫu Liquid Glass"><button type="button" data-glass-preset="clear">Kính trong</button><button type="button" data-glass-preset="frost">Kính mờ</button><button type="button" data-glass-preset="dark">Kính tối</button><button type="button" data-glass-preset="solid">Màu đặc</button></div>
     <label>Màu kính <input type="color" id="glass-tint"></label>
     <label>Độ đậm <input type="range" id="glass-opacity" min="0" max="100"></label>
     <label>Độ mờ nền <input type="range" id="glass-blur" min="0" max="30"></label>
@@ -214,7 +238,9 @@
     <label>Bo góc <input type="range" id="glass-radius" min="0" max="42"></label>
     <label>Cỡ chữ <input type="range" id="theme-scale" min="90" max="150" step="5"></label>
     <label><input type="checkbox" id="theme-motion"> Hiệu ứng chuyển động</label>
-    <label>Mức chuyển động <select id="motion-level"><option value="full">Đầy đủ</option><option value="balanced">Cân bằng</option><option value="economy">Tiết kiệm</option></select></label>
+    <label>Mức chuyển động <select id="motion-level"><option value="full">Đầy đủ</option><option value="balanced">Cân bằng</option><option value="economy">Tiết kiệm</option><option value="reduced">Giảm chuyển động</option></select></label>
+    <label><input type="checkbox" id="dynamic-cover-bg" checked> Đổi màu nền động theo bìa đĩa</label>
+    <label><input type="checkbox" id="battery-saver" checked> Tự hạ blur/visualizer khi dùng pin</label>
     <label>Vị trí ảnh nền <select id="back-position"><option value="center">Giữa</option><option value="top">Trên</option><option value="bottom">Dưới</option></select></label>
     <label>Lớp phủ ảnh nền <input type="range" id="back-shade" min="0" max="95"></label>
     <button id="theme-inherit">Dùng lại thiết lập chung</button>
@@ -222,7 +248,7 @@
     <label>Ảnh nền <input id="background" type="file" accept="image/*"></label>
     <details><summary>Xuất hoặc nhập giao diện</summary><label>Dữ liệu giao diện <textarea id="theme-data" rows="4"></textarea></label>
       <button id="theme-export">Xuất để sao chép</button><button id="theme-import">Áp dụng dữ liệu đã dán</button><p id="theme-data-status" role="status"></p></details>
-    <details><summary>Giấy phép và tác giả</summary><p>VelunaMusic dùng GPL-3.0. Giao diện và bộ đọc lời có phần chuyển từ SimpMusic 2.6.0 của maxrave-dev và các tác giả đóng góp. Phông Poppins dùng SIL Open Font License.</p>
+    <details><summary>Giấy phép và tác giả</summary><p>VelunaMusic dùng GPL-3.0. Biểu tượng SVG trong thư mục simpmusic được vẽ mới cho VelunaMusic; bộ đọc lời và bố cục tham khảo SimpMusic 2.6.0 của maxrave-dev và các tác giả đóng góp. Phông Poppins dùng SIL Open Font License 1.1.</p>
       <details><summary>GPL-3.0</summary><pre id="license-gpl"></pre></details>
       <details><summary>Material Icons · Apache 2.0</summary><pre id="license-icons"></pre></details>
       <details><summary>Poppins · OFL 1.1</summary><pre id="license-font"></pre></details>

@@ -4,20 +4,20 @@
   const config = window.velunaCloud;
   const tell = message => { get("account-status").textContent = message; };
   let auth = null, revision = 0, ready = false, refreshing = null, generation = 0;
-  const handoff = accountHandoff({request, deviceId:() => device().device_id, tell, active:() => !!auth});
+  const handoff = accountHandoff({request, deviceId:() => device().device_id, tell, active:() => !!auth, user:()=>auth?.id});
   const spotify = spotifySettings({request,user:()=>auth?.id,perform});
   const collections = playlistLibrary(request);
-  const remote = playerRemote({config,session:()=>auth,device,refresh:()=>request("/auth/v1/user")});
+  const remote = playerRemote({config,request,onHandoff:()=>handoff.wake(),session:()=>auth,device,refresh:()=>request("/auth/v1/user")});
 
   async function request(path, method = "GET", body, authenticated = true, headers = {}) {
     const session = auth;
     if (authenticated && !session) throw Error("Hãy đăng nhập để tiếp tục.");
     if (authenticated && Date.now() >= session.expires - 60000) {
-      if (!refreshing) refreshing = request("/auth/v1/token?grant_type=refresh_token", "POST",
-        {refresh_token: session.refresh}, false).then(data => {
+      if (!refreshing) refreshing = (native?.accountSession ? nativeTransfer("accountSession") : request("/auth/v1/token?grant_type=refresh_token", "POST",
+        {refresh_token: session.refresh}, false)).then(data => {
           if (auth !== session) throw Error("Phiên đăng nhập đã thay đổi.");
           remember(data);
-          return window.velunaVault.write("account", data.refresh_token);
+          if (!native?.accountSession) return window.velunaVault.write("account", data.refresh_token);
         }).finally(() => { refreshing = null; });
       await refreshing;
     }
@@ -35,7 +35,7 @@
     return data;
   }
   function remember(s) {
-    auth = { access:s.access_token, refresh:s.refresh_token, expires:Date.now() + s.expires_in * 1000,
+    auth = { access:s.access_token, refresh:s.refresh_token, expires:s.expires_at ? s.expires_at*1000 : Date.now() + s.expires_in * 1000,
       id:s.user.id, email:s.user.email };
     collections.account(auth.id);
     remote.update();
@@ -123,9 +123,9 @@
   async function restore() {
     const token = await window.velunaVault.read("account");
     if (!token || auth) return;
-    const data = await request("/auth/v1/token?grant_type=refresh_token", "POST", {refresh_token:token}, false);
+    const data = native?.accountSession ? await nativeTransfer("accountSession") : await request("/auth/v1/token?grant_type=refresh_token", "POST", {refresh_token:token}, false);
     if (auth) return;
-    await window.velunaVault.write("account", data.refresh_token);
+    if (!native?.accountSession) await window.velunaVault.write("account", data.refresh_token);
     remember(data); panels(); await devices(); await theme(false); await spotify.show();
   }
   if (config.url && (window.VelunaAndroid || window.__TAURI__)) perform(restore);

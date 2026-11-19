@@ -1,0 +1,37 @@
+def targets = [
+    "arm64-v8a": ["aarch64-linux-android", "aarch64-linux-android"],
+    "armeabi-v7a": ["armv7-linux-androideabi", "armv7a-linux-androideabi"],
+    "x86_64": ["x86_64-linux-android", "x86_64-linux-android"]
+]
+def workspace = rootProject.projectDir.parentFile
+def sdk = android.sdkDirectory
+def os = System.getProperty("os.name").toLowerCase(Locale.ROOT)
+def host = os.contains("windows") ? "windows" : (os.contains("mac") ? "darwin" : "linux")
+def toolchain = new File(sdk, "ndk/${android.ndkVersion}/toolchains/llvm/prebuilt/${host}-x86_64/bin")
+def targetDir = layout.buildDirectory.dir("rust-target").get().asFile
+targets.each { abi, spec ->
+    def (target, clangPrefix) = spec
+    def suffix = target.replace("-", "_")
+    def clang = new File(toolchain, clangPrefix + "26-clang" + (host == "windows" ? ".cmd" : ""))
+    def archive = new File(toolchain, host == "windows" ? "llvm-ar.exe" : "llvm-ar")
+    def output = layout.buildDirectory.file("generated/velunaJni/${abi}/libveluna_core.so")
+    def rust = tasks.register("buildRust_" + suffix, Exec) {
+        inputs.files(new File(workspace,"Cargo.toml"),new File(workspace,"Cargo.lock"),new File(workspace,"core/Cargo.toml"))
+        inputs.dir(new File(workspace,"core/src"))
+        inputs.property("ndk",android.ndkVersion)
+        outputs.file(output)
+        workingDir workspace
+        environment "CARGO_TARGET_DIR", targetDir
+        environment "CARGO_TARGET_" + suffix.toUpperCase(Locale.ROOT) + "_LINKER", clang.absolutePath
+        environment "CC_" + suffix, clang.absolutePath
+        environment "AR_" + suffix, archive.absolutePath
+        commandLine "cargo","build","--locked","-p","veluna-core","--release","--target",target
+        doLast {
+            project.copy {
+                from(new File(targetDir, "${target}/release/libveluna_core.so"))
+                into(output.get().asFile.parentFile)
+            }
+        }
+    }
+    tasks.named("preBuild").configure { dependsOn rust }
+}

@@ -50,6 +50,8 @@ pub struct Invitation {
 #[derive(Deserialize)]
 struct Header {
     kind: String,
+    #[serde(default)]
+    video_id: String,
     key: String,
     #[serde(default)]
     token: String,
@@ -112,6 +114,7 @@ fn server_identity(identity: Identity) -> Result<(ServerConfig, String), String>
 trait Destination: Send + Sync {
     fn data_dir(&self) -> Result<std::path::PathBuf, String>;
     fn import(&self, file: std::path::PathBuf) -> Result<String, String>;
+    fn reference(&self, video_id: &str, title: String) -> Result<(), String>;
     fn event(&self, event: &str, payload: serde_json::Value);
 }
 impl Destination for AppHandle {
@@ -123,6 +126,15 @@ impl Destination for AppHandle {
         ids.into_iter()
             .next()
             .ok_or_else(|| "Không thêm được file.".to_owned())
+    }
+    fn reference(&self, video_id: &str, title: String) -> Result<(), String> {
+        super::save_references(
+            self,
+            vec![super::Track {
+                id: format!("ytmusic://{video_id}"),
+                title,
+            }],
+        )
     }
     fn event(&self, event: &str, payload: serde_json::Value) {
         if let Some(win) = self.get_webview_window("main") {
@@ -280,8 +292,27 @@ impl Receiver {
                 .event("status", "Đã ghép đôi. PC có thể nhận nhạc.".into());
             return reply(io, serde_json::json!({"ok":true}));
         }
-        if h.kind != "send" || !self.peers.lock().map_err(err)?.contains_key(&peer) {
+        if !matches!(h.kind.as_str(), "send" | "reference")
+            || !self.peers.lock().map_err(err)?.contains_key(&peer)
+        {
             return Err("Thiết bị chưa được PC tin cậy.".into());
+        }
+        if !matches!(h.action.as_str(), "save" | "next" | "now" | "end") {
+            return Err("Invalid queue action".into());
+        }
+        if h.kind == "reference" {
+            if !veluna_core::ytmusic::valid_video_id(&h.video_id)
+                || h.name.is_empty()
+                || h.name.chars().count() > 512
+            {
+                return Err("Invalid music reference".into());
+            }
+            self.destination.reference(&h.video_id, h.name)?;
+            self.destination.event(
+                "received",
+                serde_json::json!({"id":format!("ytmusic://{}",h.video_id),"action":h.action}),
+            );
+            return reply(io, serde_json::json!({"ok":true}));
         }
         if h.size == 0
             || h.size > MAX_BYTES
@@ -382,6 +413,16 @@ pub fn nearby_interfaces() -> Vec<String> {
         .collect();
     ips.sort();
     ips.dedup();
+    // UDP connect asks the OS which interface it would route through. It sends no payload.
+    let preferred = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0))
+        .ok()
+        .and_then(|s| {
+            s.connect((Ipv4Addr::new(192, 0, 2, 1), 9)).ok()?;
+            Some(s.local_addr().ok()?.ip().to_string())
+        });
+    if let Some(index) = preferred.and_then(|ip| ips.iter().position(|item| item == &ip)) {
+        ips.swap(0, index);
+    }
     ips
 }
 #[tauri::command]
@@ -516,6 +557,9 @@ mod tests {
         fn import(&self, file: PathBuf) -> Result<String, String> {
             Ok(file.to_string_lossy().into_owned())
         }
+        fn reference(&self, video_id: &str, title: String) -> Result<(), String> {
+            fs::write(self.dir.join(video_id), title).map_err(err)
+        }
         fn event(&self, event: &str, value: Value) {
             self.events.send((event.to_owned(), value)).unwrap();
         }
@@ -588,7 +632,7 @@ mod tests {
         });
         let worker = Arc::clone(&server);
         let thread = std::thread::spawn(move || {
-            for _ in 0..4 {
+            for _ in 0..6 {
                 let (stream, _) = listener.accept().unwrap();
                 let _ = worker.connection(stream);
             }
@@ -631,6 +675,15 @@ mod tests {
         assert_eq!(send(&"0".repeat(64))["ok"], false);
         assert_eq!(send(&digest)["digest"], digest);
         assert_eq!(send(&digest)["digest"], digest);
+        for (video, ok) in [("abcdefghijk", true), ("../bad-path", false)] {
+            let mut link = connect();
+            reply(&mut link,json!({"kind":"reference","key":key,"video_id":video,"name":"Fixture","action":"end"})).unwrap();
+            assert_eq!(read_frame(&mut link)["ok"], ok);
+        }
+        assert_eq!(
+            fs::read_to_string(temp.path().join("abcdefghijk")).unwrap(),
+            "Fixture"
+        );
         thread.join().unwrap();
         let paths = fs::read_dir(temp.path().join("received").join(&digest))
             .unwrap()

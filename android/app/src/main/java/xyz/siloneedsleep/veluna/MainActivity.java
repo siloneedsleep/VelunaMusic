@@ -26,10 +26,18 @@ public final class MainActivity extends Activity {
     static native boolean newerRelease(String installed, String tag);
     static native String analyzeAudio(int fd);
     static native String readMediaTags(int fd, boolean artwork);
+    static native String ytmSearch(String query, String filter);
+    static native String ytmResolveStream(String videoId, boolean forceRefresh);
+    static native String ytmRefreshStream(String videoId);
+    static native String ytmAlbum(String browseId);
+    static native String ytmArtist(String browseId);
+    static native String ytmLyrics(String videoId, String title, String artist, long durationSec);
     private final ArrayList<MediaItem> library = new ArrayList<>();
+    private final java.util.concurrent.ConcurrentHashMap<String, JSONObject> ytmMeta = new java.util.concurrent.ConcurrentHashMap<>();
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final ExecutorService network = Executors.newSingleThreadExecutor();
+    private final ExecutorService network = Executors.newFixedThreadPool(4);
     private MediaController controller;
+    private Runnable pendingSelection;
     private ListenableFuture<MediaController> connection;
     private WebView web;
     private SecretStore secrets;
@@ -66,7 +74,8 @@ public final class MainActivity extends Activity {
                 if ("https".equals(uri.getScheme()) && WebViewAssetLoader.DEFAULT_DOMAIN.equals(uri.getHost()))
                     return local.shouldInterceptRequest(uri);
                 if (!request.isForMainFrame() && "https".equals(uri.getScheme()) && java.util.Arrays.asList(
-                    "vkzrgfiopdnujookplbv.supabase.co","api.openai.com","openrouter.ai","accounts.spotify.com","api.spotify.com").contains(uri.getHost())) return null;
+                    "vkzrgfiopdnujookplbv.supabase.co","api.openai.com","openrouter.ai","accounts.spotify.com","api.spotify.com",
+                    "lh3.googleusercontent.com","i.ytimg.com","yt3.ggpht.com").contains(uri.getHost())) return null;
                 return new WebResourceResponse("text/plain", "UTF-8", new ByteArrayInputStream(new byte[0]));
             }
             @Override public void onPageFinished(WebView view, String url) { publish(); }
@@ -89,24 +98,20 @@ public final class MainActivity extends Activity {
             if (isDestroyed()) return;
             try {
                 controller = connection.get();
-                if (controller.getMediaItemCount() == 0 && !library.isEmpty()) {
-                    ArrayList<MediaItem> restored=new ArrayList<>();
-                    try {
-                        JSONArray ids=new JSONArray(getPreferences(0).getString("lastQueue","[]"));
-                        for(int n=0;n<ids.length();n++){int pos=index(ids.getString(n));if(pos>=0)restored.add(library.get(pos));}
-                    } catch(JSONException ignored){}
-                    if(restored.isEmpty())restored.addAll(library);
-                    String previous=getPreferences(0).getString("lastId","");
-                    int pos=0;while(pos<restored.size() && !restored.get(pos).mediaId.equals(previous))pos++;
-                    boolean found=pos<restored.size();
-                    controller.setMediaItems(restored,found?pos:0,found?getPreferences(0).getLong("lastMs",0):0);
-                }
                 controller.addListener(new Player.Listener() {
                     @Override public void onEvents(Player p, Player.Events events) { publish(); }
-                    @Override public void onPlayerError(PlaybackException e) { message("Không đọc được bài đã chọn."); }
+                    @Override public void onPlayerError(PlaybackException e) {
+                        MediaItem cur = controller == null ? null : controller.getCurrentMediaItem();
+                        String vid = cur == null ? null : PlaybackService.extractYtmVideoId(
+                            cur.localConfiguration == null ? null : cur.localConfiguration.uri, cur.mediaId);
+                        message(vid != null ? "Đang làm mới luồng phát YouTube Music." : "Không đọc được bài đã chọn.");
+                    }
                 });
+                Runnable selection=pendingSelection;
+                pendingSelection=null;
+                if(selection!=null)selection.run();
                 publish();
-            } catch (Exception e) { message("Không thể kết nối trình phát."); }
+            } catch (Exception e) {pendingSelection=null;message("Không thể kết nối trình phát."); }
         }, ContextCompat.getMainExecutor(this));
     }
 
@@ -115,9 +120,23 @@ public final class MainActivity extends Activity {
             JSONArray list = new JSONArray(getPreferences(0).getString("tracks", "[]"));
             for (int i = 0; i < list.length(); i++) {
                 JSONObject item = list.getJSONObject(i);
-                library.add(track(Uri.parse(item.getString("id")), item.getString("title")));
+                String id = item.getString("id");
+                if (id.startsWith("ytmusic://")) ytmMeta.put(id, item);
+                library.add(buildMediaItem(Uri.parse(id), item));
             }
         } catch (JSONException ignored) { }
+    }
+    static MediaItem buildMediaItem(Uri uri, JSONObject item) {
+        MediaMetadata.Builder md = new MediaMetadata.Builder()
+            .setTitle(item.optString("title", "Audio"));
+        String artist = item.optString("artist", item.optString("artist_text", ""));
+        if (!artist.isEmpty()) md.setArtist(artist);
+        String album = item.optString("album", "");
+        if (!album.isEmpty()) md.setAlbumTitle(album);
+        String thumb = item.optString("thumbnail", "");
+        if (!thumb.isEmpty()) md.setArtworkUri(Uri.parse(thumb));
+        return new MediaItem.Builder().setUri(uri).setMediaId(uri.toString())
+            .setMediaMetadata(md.build()).build();
     }
     private MediaItem track(Uri uri, String title) {
         return new MediaItem.Builder().setUri(uri).setMediaId(uri.toString())
@@ -129,8 +148,95 @@ public final class MainActivity extends Activity {
     }
     private JSONArray tracks() throws JSONException {
         JSONArray result = new JSONArray();
-        for (MediaItem item : library) result.put(new JSONObject().put("id", item.mediaId).put("title", String.valueOf(item.mediaMetadata.title)));
+        for (MediaItem item : library) {
+            JSONObject row = new JSONObject();
+            JSONObject meta = ytmMeta.get(item.mediaId);
+            if (meta != null) {
+                for (java.util.Iterator<String> it = meta.keys(); it.hasNext(); ) {
+                    String k = it.next();
+                    row.put(k, meta.get(k));
+                }
+            }
+            row.put("id", item.mediaId);
+            row.put("title", String.valueOf(item.mediaMetadata.title));
+            if (item.mediaId.startsWith("ytmusic://")) {
+                row.put("source", "ytmusic");
+                String vid = item.mediaId.substring("ytmusic://".length());
+                row.put("video_id", vid);
+                JSONObject streamMeta = PlaybackService.getCachedStreamMeta(this, vid);
+                if (streamMeta != null) {
+                    row.put("codec", streamMeta.optString("codec"));
+                    row.put("container", streamMeta.optString("container"));
+                    row.put("bitrate", streamMeta.optLong("bitrate"));
+                    row.put("bitrate_kbps", streamMeta.optInt("bitrate_kbps"));
+                    row.put("sample_rate", streamMeta.optInt("sample_rate"));
+                    row.put("expires_at", streamMeta.optLong("expires_at"));
+                }
+            }
+            result.put(row);
+        }
         return result;
+    }
+    private JSONObject normalizeYtmEntry(JSONObject raw) throws JSONException {
+        String vid = raw.optString("video_id", "");
+        if (vid.isEmpty()) {
+            String rawId = raw.optString("id", "");
+            if (rawId.startsWith("ytmusic://")) vid = rawId.substring("ytmusic://".length());
+            else if (rawId.matches("[a-zA-Z0-9_-]{11}")) vid = rawId;
+        }
+        if (!vid.matches("[a-zA-Z0-9_-]{11}")) throw new JSONException("Invalid video_id");
+        String uriStr = "ytmusic://" + vid;
+        String title = raw.optString("title", "YouTube Music · " + vid);
+        String artist = raw.optString("artist", raw.optString("artist_text", ""));
+        String albumName = "";
+        Object albObj = raw.opt("album");
+        if (albObj instanceof JSONObject) albumName = ((JSONObject) albObj).optString("name", "");
+        else if (albObj instanceof String) albumName = (String) albObj;
+        String thumb = raw.optString("thumbnail", "");
+        if (thumb.isEmpty()) {
+            JSONArray thumbs = raw.optJSONArray("thumbnails");
+            if (thumbs != null && thumbs.length() > 0) thumb = thumbs.optString(thumbs.length() - 1, "");
+        }
+        JSONObject out = new JSONObject();
+        out.put("id", uriStr);
+        out.put("video_id", vid);
+        out.put("source", "ytmusic");
+        out.put("title", title);
+        out.put("artist", artist);
+        out.put("album", albumName);
+        if (raw.has("duration_sec") && !raw.isNull("duration_sec")) out.put("duration_sec", raw.optLong("duration_sec"));
+        if (!thumb.isEmpty()) out.put("thumbnail", thumb);
+        if (raw.has("recording_kind")) out.put("recording_kind", raw.optString("recording_kind", "original"));
+        if (raw.has("recording_label")) out.put("recording_label", raw.optString("recording_label", "Bản gốc"));
+        return out;
+    }
+    private void upsertYtmTracks(JSONArray list, int startIndex, boolean playNow) {
+        if (isDestroyed() || list == null || list.length() == 0) return;
+        ArrayList<MediaItem> queue = new ArrayList<>();
+        for (int i = 0; i < list.length(); i++) {
+            try {
+                JSONObject meta = normalizeYtmEntry(list.getJSONObject(i));
+                String id = meta.getString("id");
+                ytmMeta.put(id, meta);
+                MediaItem mi = buildMediaItem(Uri.parse(id), meta);
+                int at = index(id);
+                if (at >= 0) library.set(at, mi);
+                else library.add(mi);
+                queue.add(mi);
+            } catch (JSONException ignored) { }
+        }
+        if (queue.isEmpty()) return;
+        try { getPreferences(0).edit().putString("tracks", tracks().toString()).apply(); } catch (JSONException ignored) { }
+        if (playNow && controller == null) {
+            pendingSelection=()->{controller.setMediaItems(queue,Math.max(0,Math.min(startIndex,queue.size()-1)),0L);
+                controller.prepare();controller.play();};
+        } else if (playNow) {
+            int bounded = Math.max(0, Math.min(startIndex, queue.size() - 1));
+            controller.setMediaItems(queue, bounded, 0L);
+            controller.prepare();
+            controller.play();
+        }
+        publish();
     }
     private JSONObject progress() {
         JSONObject p = new JSONObject();
@@ -147,6 +253,18 @@ public final class MainActivity extends Activity {
         if (!visible) return;
         try {
             if(controller!=null)streamVolume=Math.round(controller.getVolume()*100);
+            if(controller!=null){
+                boolean added=false;
+                for(int n=0;n<controller.getMediaItemCount();n++){
+                    MediaItem incoming=controller.getMediaItemAt(n);
+                    if(incoming.mediaId.startsWith("ytmusic://") && !ytmMeta.containsKey(incoming.mediaId)){
+                        JSONObject row=normalizeYtmEntry(new JSONObject().put("id",incoming.mediaId)
+                            .put("title",String.valueOf(incoming.mediaMetadata.title)));
+                        ytmMeta.put(incoming.mediaId,row);library.add(incoming);added=true;
+                    }
+                }
+                if(added)getPreferences(0).edit().putString("tracks",tracks().toString()).apply();
+            }
             JSONObject state = progress().put("tracks", tracks());
             if(controller!=null) {
                 JSONArray queue=new JSONArray();
@@ -169,12 +287,8 @@ public final class MainActivity extends Activity {
     @Override protected void onStop() {
         nearby.stopDiscovery();
         visible = false; handler.removeCallbacks(tick);
-        if (controller != null && controller.getCurrentMediaItem() != null) {
-            JSONArray queue=new JSONArray();
-            for(int i=0;i<controller.getMediaItemCount();i++)queue.put(controller.getMediaItemAt(i).mediaId);
-            getPreferences(0).edit().putString("lastQueue",queue.toString())
-                .putString("lastId", controller.getCurrentMediaItem().mediaId).putLong("lastMs", controller.getCurrentPosition()).apply();
-        }
+
+        if(controller!=null)PlaybackJournal.save(controller,getPreferences(0));
         super.onStop();
     }
     @Override protected void onDestroy() {
@@ -261,22 +375,7 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void remotePlayer(String ticket,String json){runOnUiThread(()->{
             try{
                 if(controller==null)throw new IllegalStateException("Máy phát chưa sẵn sàng.");
-                JSONObject cmd=new JSONObject(json);double value=cmd.getDouble("value");
-                switch(cmd.getString("action")){
-                    case "play":
-                        if(controller.getMediaItemCount()==0)throw new IllegalStateException("Hàng chờ trống.");
-                        controller.prepare();controller.play();break;
-                    case "pause":controller.pause();break;
-                    case "seek":controller.seekTo((long)Math.max(0,value*1000));break;
-                    case "volume":controller.setVolume((float)Math.max(0,Math.min(1,value/100)));break;
-                    case "next":if(!controller.hasNextMediaItem())throw new IllegalStateException("Đã ở cuối hàng chờ.");
-                        controller.seekToNextMediaItem();controller.play();break;
-                    case "previous":if(!controller.hasPreviousMediaItem())throw new IllegalStateException("Đã ở đầu hàng chờ.");
-                        controller.seekToPreviousMediaItem();controller.play();break;
-                    case "select":if(value<0 || value>=controller.getMediaItemCount() || value!=Math.floor(value))throw new IllegalArgumentException();
-                        controller.seekToDefaultPosition((int)value);controller.prepare();controller.play();break;
-                    default:throw new IllegalArgumentException();
-                }
+                RemotePlayback.apply(controller,new JSONObject(json));
                 publish();call("onVelunaTransferReply",ticket,true,"");
             }catch(Exception e){call("onVelunaTransferReply",ticket,false,e.getMessage()==null?"Lệnh không hợp lệ.":e.getMessage());}
         });}
@@ -318,9 +417,89 @@ public final class MainActivity extends Activity {
                 controller.setMediaItems(queue); controller.prepare(); controller.play(); publish();
             } catch (JSONException invalid) {message("Playlist không hợp lệ.");}
         }); }
-        @JavascriptInterface public void openYouTube(String id) {if(id!=null && id.matches("[a-zA-Z0-9_-]{11}"))runOnUiThread(()->{
-            if(controller!=null)controller.pause();startActivity(new Intent(MainActivity.this,YouTubeActivity.class).putExtra("video",id));
-        });}
+        @JavascriptInterface public void openYouTube(String id) {
+            if (id == null || !id.matches("[a-zA-Z0-9_-]{11}")) return;
+            runOnUiThread(() -> {
+                try {
+                    String trackId = "ytmusic://" + id;
+                    JSONObject initial = ytmMeta.get(trackId);
+                    if (initial == null) {
+                        initial = new JSONObject()
+                            .put("id", trackId)
+                            .put("video_id", id)
+                            .put("title", "YouTube Music · " + id)
+                            .put("source", "ytmusic");
+                    }
+                    upsertYtmTracks(new JSONArray().put(initial), 0, controller != null);
+                    if (controller == null) pendingSelection = () -> selectTrack(trackId, true, 0L);
+                    final JSONObject snapshot = initial;
+                    network.execute(() -> {
+                        try {
+                            JSONObject stream = PlaybackService.resolveYtmStream(MainActivity.this, id, false);
+                            JSONObject enriched = new JSONObject(snapshot.toString());
+                            String t = stream.optString("title", "");
+                            String a = stream.optString("author", "");
+                            if (!t.isEmpty()) enriched.put("title", t);
+                            if (!a.isEmpty()) enriched.put("artist", a);
+                            long durMs = stream.optLong("duration_ms", 0L);
+                            if (durMs > 0L) enriched.put("duration_sec", durMs / 1000L);
+                            runOnUiThread(() -> upsertYtmTracks(new JSONArray().put(enriched), 0, false));
+                        } catch (Exception ignored) { }
+                    });
+                } catch (JSONException ignored) { }
+            });
+        }
+        private void runYtmTask(String ticket, java.util.concurrent.Callable<String> task) {
+            network.execute(() -> {
+                try {
+                    String raw = task.call();
+                    JSONObject obj = new JSONObject(raw);
+                    String err = obj.optString("error", "");
+                    runOnUiThread(() -> {
+                        if (!err.isEmpty()) call("onVelunaTransferReply", ticket, "", err);
+                        else call("onVelunaTransferReply", ticket, obj, "");
+                    });
+                } catch (Exception e) {
+                    String msgText = e.getMessage() == null ? "Lỗi kết nối YouTube Music." : e.getMessage();
+                    runOnUiThread(() -> call("onVelunaTransferReply", ticket, "", msgText));
+                }
+            });
+        }
+        @JavascriptInterface public void ytmSearch(String ticket, String query, String filter) {
+            runYtmTask(ticket, () -> MainActivity.ytmSearch(query, filter == null ? "all" : filter));
+        }
+        @JavascriptInterface public void ytmStream(String ticket, String videoId, boolean forceRefresh) {
+            runYtmTask(ticket, () -> {
+                JSONObject info = PlaybackService.resolveYtmStream(MainActivity.this, videoId, forceRefresh);
+                return info.toString();
+            });
+        }
+        @JavascriptInterface public void ytmRefreshStream(String ticket, String videoId) {
+            runYtmTask(ticket, () -> {
+                PlaybackService.invalidateYtmStream(videoId);
+                JSONObject info = PlaybackService.resolveYtmStream(MainActivity.this, videoId, true);
+                return info.toString();
+            });
+        }
+        @JavascriptInterface public void ytmAlbum(String ticket, String browseId) {
+            runYtmTask(ticket, () -> MainActivity.ytmAlbum(browseId));
+        }
+        @JavascriptInterface public void ytmArtist(String ticket, String browseId) {
+            runYtmTask(ticket, () -> MainActivity.ytmArtist(browseId));
+        }
+        @JavascriptInterface public void ytmLyrics(String ticket, String videoId, String title, String artist, long durationSec) {
+            runYtmTask(ticket, () -> MainActivity.ytmLyrics(videoId, title, artist, durationSec));
+        }
+        @JavascriptInterface public void ytmAddOrPlay(String tracksJson, int startIndex, boolean playNow) {
+            runOnUiThread(() -> {
+                try {
+                    JSONArray list = new JSONArray(tracksJson);
+                    upsertYtmTracks(list, startIndex, playNow);
+                } catch (JSONException e) {
+                    message("Danh sách YouTube Music không hợp lệ.");
+                }
+            });
+        }
         @JavascriptInterface public String nearbyDestination(){return nearby.destination();}
         @JavascriptInterface public void nearbyDiscover(boolean on){runOnUiThread(()->{if(on)nearby.discover();else nearby.stopDiscovery();});}
         @JavascriptInterface public void nearbyScan(){runOnUiThread(()->new com.google.zxing.integration.android.IntentIntegrator(MainActivity.this)
@@ -352,6 +531,47 @@ public final class MainActivity extends Activity {
         @JavascriptInterface public void readCover(String ticket, String id) { readAudio(ticket,id,false,true); }
         @JavascriptInterface public void analyzeTrack(String ticket, String id) { readAudio(ticket,id,true,false); }
         private void readAudio(String ticket, String id, boolean analyze, boolean artwork) { runOnUiThread(() -> {
+            if (id != null && id.startsWith("ytmusic://")) {
+                final String videoId = id.substring("ytmusic://".length());
+                final JSONObject meta = ytmMeta.get(id);
+                network.execute(() -> {
+                    try {
+                        if (analyze) {
+                            JSONObject stream = PlaybackService.getCachedStreamMeta(MainActivity.this, videoId);
+                            if (stream == null) stream = PlaybackService.resolveYtmStream(MainActivity.this, videoId, false);
+                            JSONObject analysis = new JSONObject()
+                                .put("source", "ytmusic")
+                                .put("video_id", videoId)
+                                .put("codec", stream.optString("codec", "opus"))
+                                .put("container", stream.optString("container", "webm"))
+                                .put("sample_rate", stream.optInt("sample_rate", 48000))
+                                .put("channels", stream.optInt("channels", 2))
+                                .put("bitrate", stream.optLong("bitrate", 128000L))
+                                .put("average_file_kbps", stream.optInt("bitrate_kbps", 128))
+                                .put("expires_at", stream.optLong("expires_at", 0L))
+                                .put("duration", stream.optLong("duration_ms", 0L) / 1000.0)
+                                .put("intro", new JSONObject().put("bpm", 120))
+                                .put("outro", new JSONObject().put("bpm", 120));
+                            runOnUiThread(() -> call("onVelunaTransferReply", ticket, analysis, ""));
+                        } else {
+                            JSONObject tagsObj = new JSONObject()
+                                .put("source", "ytmusic")
+                                .put("title", meta != null ? meta.optString("title", videoId) : videoId)
+                                .put("artist", meta != null ? meta.optString("artist", "") : "")
+                                .put("album", meta != null ? meta.optString("album", "YouTube Music") : "YouTube Music")
+                                .put("recording_kind", meta != null ? meta.optString("recording_kind", "original") : "original")
+                                .put("recording_label", meta != null ? meta.optString("recording_label", "Bản gốc") : "Bản gốc");
+                            if (artwork && meta != null && !meta.optString("thumbnail", "").isEmpty()) {
+                                tagsObj.put("cover", meta.optString("thumbnail"));
+                            }
+                            runOnUiThread(() -> call("onVelunaTransferReply", ticket, tagsObj, ""));
+                        }
+                    } catch (Exception e) {
+                        runOnUiThread(() -> call("onVelunaTransferReply", ticket, "", "Không đọc được thông tin YouTube Music."));
+                    }
+                });
+                return;
+            }
             if (index(id) < 0) { call("onVelunaTransferReply", ticket, "", "Thiếu file nhạc."); return; }
             network.execute(() -> {
                 try (ParcelFileDescriptor descriptor = getContentResolver().openFileDescriptor(Uri.parse(id), "r")) {
@@ -367,22 +587,9 @@ public final class MainActivity extends Activity {
             if (index(id) < 0) { call("onVelunaTransferReply", ticket, "", "Thiếu file nhạc."); return; }
             network.execute(() -> {
                 try {
-                    Uri uri = Uri.parse(id);
-                    android.media.MediaMetadataRetriever probe = new android.media.MediaMetadataRetriever();
-                    try {
-                        probe.setDataSource(MainActivity.this, uri);
-                        String duration = probe.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION);
-                        if (duration == null || Long.parseLong(duration) <= 0) throw new IOException();
-                    } finally { probe.release(); }
-                    java.security.MessageDigest sha = java.security.MessageDigest.getInstance("SHA-256");
-                    try (InputStream in = getContentResolver().openInputStream(uri)) {
-                        if (in == null) throw new IOException();
-                        byte[] block = new byte[65536]; int n;
-                        while ((n = in.read(block)) >= 0) sha.update(block, 0, n);
-                    }
-                    StringBuilder out = new StringBuilder();
-                    for (byte b : sha.digest()) out.append(String.format(java.util.Locale.ROOT, "%02x", b & 255));
-                    runOnUiThread(() -> call("onVelunaTransferReply", ticket, out.toString(), ""));
+                    String digest=TrackReadiness.identify(MainActivity.this,id);
+                    if(digest.startsWith("ytmusic://"))PlaybackService.resolveYtmStream(MainActivity.this,digest.substring(10),false);
+                    runOnUiThread(() -> call("onVelunaTransferReply",ticket,digest,""));
                 } catch (Exception e) { runOnUiThread(() -> call("onVelunaTransferReply", ticket, "", "Không đọc được file nhạc.")); }
             });
         }); }
@@ -392,26 +599,57 @@ public final class MainActivity extends Activity {
             JSONObject playback = progress();
             controller.pause(); call("onVelunaTransferReply", ticket, playback, "");
         }); }
+        @JavascriptInterface public void accountSession(String ticket) {
+            network.execute(()->{
+                try {
+                    JSONObject session=CloudSession.session(MainActivity.this);
+                    runOnUiThread(()->call("onVelunaTransferReply",ticket,session,""));
+                } catch(Exception e){runOnUiThread(()->call("onVelunaTransferReply",ticket,null,"Không thể kết nối tài khoản."));}
+            });
+        }
+        @JavascriptInterface public void handoffOrigin(String owner,String transfer,String media) {
+            getSharedPreferences("handoff-journal",0).edit().putString("origin/"+owner,
+                RemotePlayback.obj("transfer",transfer,"media",media).toString()).apply();
+        }
+        @JavascriptInterface public void remoteSettings(String user,String device,String label,boolean enabled) {
+            android.content.SharedPreferences prefs=getSharedPreferences("player",0);
+            String identity="";
+            if(enabled)try{
+                identity=new JSONObject().put("user",java.util.UUID.fromString(user)).put("device",java.util.UUID.fromString(device))
+                    .put("label",label.substring(0,Math.min(80,label.length()))).toString();
+            }catch(Exception ignored){}
+            prefs.edit().putString("remoteIdentity",identity).apply();
+        }
         @JavascriptInterface public String readSecret(String slot) {
             if ("lan-peer".equals(slot)) return "";
             try { return secrets.read(slot); } catch (Exception e) { return ""; }
         }
         @JavascriptInterface public boolean writeSecret(String slot, String value) {
             if ("lan-peer".equals(slot)) return false;
-            try { return secrets.write(slot, value); } catch (Exception e) { return false; }
+            try { return "account".equals(slot) ? CloudSession.replace(secrets,value) : secrets.write(slot, value); } catch (Exception e) { return false; }
         }
         @JavascriptInterface public void pick() { runOnUiThread(() -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT)
             .setType("audio/*").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true), 11)); }
         @JavascriptInterface public void refresh() { runOnUiThread(MainActivity.this::publish); }
-        @JavascriptInterface public void select(String id, boolean play, long ms) { runOnUiThread(() -> {
-            int i = index(id);
-            if (controller == null || i < 0) return;
+        @JavascriptInterface public void select(String id, boolean play, long ms) {
+            runOnUiThread(()->{
+                if(index(id)<0)return;
+                Runnable selection=()->selectTrack(id,play,ms);
+                if(controller==null)pendingSelection=selection;
+                else selection.run();
+            });
+        }
+        private void selectTrack(String id, boolean play, long ms) {
+            int i=index(id);
+            if(i<0)return;
             int queued=-1;
-            for(int n=0; n<controller.getMediaItemCount(); n++) if(id.equals(controller.getMediaItemAt(n).mediaId)){queued=n;break;}
-            if(queued>=0) controller.seekTo(queued, Math.max(ms,0));
+            for(int n=0;n<controller.getMediaItemCount();n++) {
+                if(id.equals(controller.getMediaItemAt(n).mediaId)){queued=n;break;}
+            }
+            if(queued>=0)controller.seekTo(queued,Math.max(ms,0));
             else controller.setMediaItems(library,i,Math.max(ms,0));
-            controller.prepare(); controller.setPlayWhenReady(play);
-        }); }
+            controller.prepare();controller.setPlayWhenReady(play);
+        }
         @JavascriptInterface public void toggle() { runOnUiThread(() -> {
             if (controller == null) return;
             if (controller.isPlaying()) controller.pause();

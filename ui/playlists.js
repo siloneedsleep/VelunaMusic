@@ -51,7 +51,7 @@ function playlistLibrary(request) {
   function fromServer(row) {
     const p=row.payload;
     if (!p || typeof p.name!=="string" || !Array.isArray(p.items) || p.items.length>1000 ||
-        !p.items.every(t=>t && typeof t.title==="string" && /^[0-9a-f]{64}$/.test(t.digest))) return null;
+        !p.items.every(t=>t && typeof t.title==="string" && /^(?:[0-9a-f]{64}|ytmusic:\/\/[\w-]{11})$/.test(t.digest))) return null;
     return {id:row.item_id,kind:row.kind,revision:row.revision,dirty:false,
       payload:{name:p.name,items:p.items.map(t=>({title:t.title,digest:t.digest})),operation:p.operation || ""}};
   }
@@ -111,6 +111,10 @@ function playlistLibrary(request) {
     try{
       const ids=[];
       for(const entry of doc.payload.items) {
+        if(/^ytmusic:\/\/[\w-]{11}$/.test(entry.digest)){
+          if(!tracks.some(t=>t.id===entry.digest))await window.velunaYtm.playTracks([{id:entry.digest,title:entry.title}],0,false);
+          ids.push(entry.digest);continue;
+        }
         const remembered=localStorage.getItem("veluna-file/"+entry.digest);
         const options=tracks.filter(t=>t.id===remembered || t.title===entry.title);
         let found;

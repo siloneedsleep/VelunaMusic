@@ -23,7 +23,9 @@
   }
   async function measure(id) {
     if (!measurements.has(id)) {
-      const computation=native?nativeTransfer("analyzeTrack",id):desktop.invoke("analyze_audio",{id});
+      const computation=native?nativeTransfer("analyzeTrack",id):id.startsWith("ytmusic://")?
+        window.velunaYtm.stream(id).then(info=>({duration:(info.duration_ms || 0)/1000,intro:{},outro:{}})):
+        desktop.invoke("analyze_audio",{id});
       measurements.set(id,computation);
       computation.catch(()=>measurements.delete(id));
       if(measurements.size>80) measurements.delete(measurements.keys().next().value);
@@ -102,7 +104,11 @@
     if(preload?.id!==plan.to){
       if(preload){preload.audio.removeAttribute("src");preload.audio.load();}
       const preview=new Audio();preview.crossOrigin="anonymous";preview.preload="metadata";
-      preload={id:plan.to,audio:preview};preview.src=desktop.convertFileSrc(plan.to);
+      const to=plan.to;preload={id:to,audio:preview};
+      if(to.startsWith("ytmusic://")){
+        try{const info=await window.velunaYtm.stream(to);if(preload?.audio!==preview)return;preview.src=info.url;}
+        catch{if(preload?.audio===preview){stopFade();plan=null;}return;}
+      }else preview.src=desktop.convertFileSrc(to);
     }
     const incoming=preload.audio, outgoing=audio;
     if(incoming.error){stopFade();plan=null;return;}

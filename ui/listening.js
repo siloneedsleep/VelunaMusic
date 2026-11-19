@@ -49,6 +49,7 @@
     if(!visible() || shown===selected)return;
     shown=selected;highlighted=activeWord=-1;lyrics.replaceChildren();
     const raw=selected && localStorage.getItem("lyrics/"+selected);
+    if(selected && String(selected).startsWith("ytmusic://") && !raw) window.velunaYtm?.ensureLyrics?.(selected);
     entries=raw?parseLyrics(raw):[];
     setOffset(selected && localStorage.getItem("lyrics-offset/"+selected),false);
     const fragment=document.createDocumentFragment();
@@ -71,18 +72,43 @@
     if(!visible())return;
     render();if(!entries.length || entries[0].time===null)return;
     const adjusted=time-delay/1000, index=lyricAt(entries,adjusted);
+    const reduced=window.velunaTheme?.isMotionReduced?.() || document.body?.dataset?.motion==="off";
     if(index!==highlighted){
       const old=lyrics.children[highlighted];
-      old?.removeAttribute("aria-current");old?.querySelector(".sung")?.classList.remove("sung");
+      old?.removeAttribute("aria-current");
+      old?.querySelectorAll(".sung,.sung-past").forEach(n=>{n.classList.remove("sung","sung-past");n.style.removeProperty("--word-fill");});
       highlighted=index;activeWord=-1;
-      const line=lyrics.children[index];if(line){line.setAttribute("aria-current","true");lyrics.scrollTop=line.offsetTop-lyrics.clientHeight/3;}
+      const line=lyrics.children[index];
+      if(line){
+        line.setAttribute("aria-current","true");
+        const top=Math.max(0,line.offsetTop-(lyrics.clientHeight-line.offsetHeight)/2);
+        if(typeof lyrics.scrollTo==="function")lyrics.scrollTo({top,behavior:reduced?"auto":"smooth"});
+        else lyrics.scrollTop=top;
+      }
     }
-    const entry=entries[index], parts=entry?.parts || [], word=entry?.end!=null && adjusted>=entry.end?-1:lyricAt(parts,adjusted);
+    const entry=entries[index], parts=entry?.parts || [];
+    const wordSynced=typeof hasWordTiming==="function"?hasWordTiming(entries):parts.length>0;
     const spans=lyrics.children[index]?.firstElementChild?.children;
-    if(word!==activeWord){spans?.[activeWord]?.classList.remove("sung");spans?.[word]?.classList.add("sung");activeWord=word;}
-    if(advancing){
-      const next=[entries[index+1]?.time,parts[word+1]?.time,entry?.end].filter(t=>t!=null && t>adjusted);
-      if(next.length)wake=setTimeout(()=>progress(currentTime()),Math.max(12,Math.ceil((Math.min(...next)-adjusted)*1000)));
+    if(wordSynced && spans && parts.length){
+      const wp=typeof wordProgress==="function"?wordProgress(entry,adjusted):{index:entry?.end!=null && adjusted>=entry.end?-1:lyricAt(parts,adjusted),ratio:1};
+      const word=wp.index;
+      if(word!==activeWord){
+        for(let k=0;k<spans.length;k++){
+          spans[k].classList.toggle("sung-past",word>=0 && k<word);
+          spans[k].classList.toggle("sung",k===word);
+          if(k!==word)spans[k].style.removeProperty("--word-fill");
+        }
+        activeWord=word;
+      }
+      if(word>=0 && spans[word]) spans[word].style.setProperty("--word-fill",Math.round(wp.ratio*100)+"%");
+      if(advancing && !document.hidden){
+        const next=[entries[index+1]?.time,parts[word+1]?.time,entry?.end].filter(t=>t!=null && t>adjusted);
+        const stepMs=next.length?Math.max(32,Math.min(180,Math.ceil((Math.min(...next)-adjusted)*1000))):180;
+        if(next.length)wake=setTimeout(()=>progress(currentTime()),stepMs);
+      }
+    }else if(advancing && !document.hidden){
+      const nextTime=entries[index+1]?.time;
+      if(nextTime!=null && nextTime>adjusted)wake=setTimeout(()=>progress(currentTime()),Math.max(40,Math.ceil((nextTime-adjusted)*1000)));
     }
   }
   function updateOffset(delta){setOffset(delta===null?0:delay+delta,true);progress(currentTime());}
@@ -110,9 +136,16 @@
     const id=selected, output=el("source-info-result");
     if(!id){output.textContent="Chọn một file nhạc trước.";return;}
     output.textContent="Đang đọc thông số…";
-    try{const v=await window.velunaDJ.measure(id);if(selected!==id){output.textContent="";return;}
-      const info=[v.codec?.toUpperCase(),v.sample_rate && (v.sample_rate/1000)+" kHz",v.bit_depth && v.bit_depth+" bit",
-        v.channels && v.channels+" kênh",v.average_file_kbps && "TB toàn file ≈ "+v.average_file_kbps+" kb/s"].filter(Boolean);
+    try{
+      const v=String(id).startsWith("ytmusic://") && !native && window.velunaYtm?.stream
+        ? await window.velunaYtm.stream(id,false)
+        : await window.velunaDJ.measure(id);
+      if(selected!==id){output.textContent="";return;}
+      const isYtm=v.source==="ytmusic" || String(id).startsWith("ytmusic://");
+      const kbps=v.average_file_kbps || v.bitrate_kbps || (v.bitrate ? Math.round(Number(v.bitrate)/1000) : 0);
+      const expText=v.expires_at ? "Hết hạn " + new Date(Number(v.expires_at)*1000).toLocaleTimeString("vi",{hour:"2-digit",minute:"2-digit"}) : "";
+      const info=[isYtm && "YouTube Music",v.codec?.toUpperCase(),v.sample_rate && (v.sample_rate/1000)+" kHz",v.bit_depth && v.bit_depth+" bit",
+        v.channels && v.channels+" kênh",kbps && (isYtm ? kbps+" kb/s" : "TB toàn file ≈ "+kbps+" kb/s"),expText].filter(Boolean);
       output.textContent=info.join(" · ") || "Chưa xác định được thông số.";
     }catch{output.textContent="Không đọc được thông số file.";}
   };
@@ -137,5 +170,5 @@
       if(mediaTrack!==selected){mediaTrack=selected;const title=tracks.find(t=>t.id===selected)?.title || "VelunaMusic";
         if(window.MediaMetadata)media.metadata=new MediaMetadata({title,artwork:[{src:new URL("icon.png",location.href).href,type:"image/png"}]});}
     }
-  }};
+  },reloadLyrics(){shown=null;if(visible()){render();progress(currentTime());}}};
 })();

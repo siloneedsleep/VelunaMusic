@@ -70,14 +70,20 @@ public class LibraryPlaybackTest {
         try {
             Intent launch=new Intent(ctx,MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activity=device.startActivitySync(launch);
-            until(activity,"typeof window.velunaLibrary==='object' && Boolean(document.querySelector('#list .row'))");
-            js(activity,"document.querySelector('#list .row').click()");
+            String testRow="Array.from(document.querySelectorAll('#list .row')).find(row=>row.getAttribute('aria-label')==='Veluna QA track')";
+            until(activity,"typeof window.velunaLibrary==='object' && Boolean("+testRow+")");
+            js(activity,testRow+".click()");
             until(activity,"document.body.dataset.playing==='true' && Number(document.querySelector('#seek').max)>=19");
             js(activity,"nativeTransfer('readTags',selected).then(v=>window.qaTags=v).catch(()=>{})");
             until(activity,"Boolean(window.qaTags && Object.hasOwn(window.qaTags,'artist'))");
             js(activity,"document.querySelector('[data-view=recent]').click()");
             until(activity,"document.querySelector('#list .row')?.textContent.includes('Veluna QA track')===true");
             assertEquals("true",js(activity,"parseLyrics('[00:00]<00:00>Veluna <00:01>Music',true)[0].parts.length===2"));
+            Intent toggle=new Intent(ctx,PlayerWidget.class).setAction("xyz.siloneedsleep.veluna.widget.toggle");
+            ctx.sendBroadcast(toggle);
+            until(activity,"document.body.dataset.playing==='false'");
+            ctx.sendBroadcast(toggle);
+            until(activity,"document.body.dataset.playing==='true'");
             js(activity,"document.querySelector('#play').click()");
             until(activity,"document.body.dataset.playing==='false'");
         } finally {

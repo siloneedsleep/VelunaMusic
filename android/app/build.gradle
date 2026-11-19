@@ -2,7 +2,14 @@ plugins { id "com.android.application" }
 android {
     namespace "xyz.siloneedsleep.veluna"
     compileSdk 35
+    ndkVersion "27.2.12479018"
     defaultConfig {
+        def config = file("../../ui/cloud-config.js").getText("UTF-8")
+        ["url":"CLOUD_URL","publishableKey":"CLOUD_KEY"].each { field, name ->
+            def match = config =~ (field + /:\s*("[^"]+")/)
+            if (!match.find()) throw new GradleException("Missing cloud configuration: " + field)
+            buildConfigField "String", name, match.group(1)
+        }
         applicationId "xyz.siloneedsleep.veluna"
         minSdk 26
         targetSdk 35
@@ -11,13 +18,17 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { buildConfig true }
+    sourceSets.main.jniLibs.srcDirs = [layout.buildDirectory.dir("generated/velunaJni")]
     sourceSets.main.assets.srcDirs = ["../../ui"]
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
 }
+apply from: "rust.gradle"
+
 dependencies {
+    implementation "com.squareup.okhttp3:okhttp:4.12.0"
     androidTestImplementation "androidx.test:runner:1.6.2"
     androidTestImplementation "androidx.test.ext:junit:1.2.1"
     implementation "com.journeyapps:zxing-android-embedded:4.3.0"

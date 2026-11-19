@@ -76,7 +76,7 @@ final class NearbyClient {
         if(cancelled)throw new InterruptedIOException();
         socket.connect(new InetSocketAddress(ip,port),7000);
         SSLSocket ssl=(SSLSocket)pinned(pin).getSocketFactory().createSocket(socket,host,port,true);
-        active=ssl;ssl.setSoTimeout(75000);ssl.startHandshake();return ssl;
+        ssl.setSoTimeout(75000);ssl.startHandshake();return ssl;
     }
     private static void header(DataOutputStream out,JSONObject message)throws Exception{
         byte[] bytes=message.toString().getBytes(StandardCharsets.UTF_8);if(bytes.length>8192)throw new IOException();
@@ -100,6 +100,7 @@ final class NearbyClient {
             header(out,new JSONObject().put("kind","pair").put("device",Build.MODEL).put("token",token).put("key",key));
             report("status","Chờ bấm Chấp nhận trên PC.");
             response(new DataInputStream(ssl.getInputStream()));
+            if(cancelled)throw new InterruptedIOException();
             if(!secrets.write("lan-peer",key))throw new IOException("Không lưu được khóa ghép đôi.");
             prefs.edit().putString("host",uri.getHost()).putInt("port",uri.getPort()).putString("pin",pin).apply();
             report("paired",destination());
@@ -108,6 +109,16 @@ final class NearbyClient {
     void send(String id,String title,String action){submit(()->{
         String host=destination(),key=secrets.read("lan-peer");
         if(host.isEmpty() || key.isEmpty())throw new IOException("Ghép đôi với PC trước.");
+        String videoId=PlaybackService.extractYtmVideoId(Uri.parse(id), id);
+        if(videoId!=null){
+            try(SSLSocket ssl=connect(host,prefs.getInt("port",0),prefs.getString("pin",""))){
+                header(new DataOutputStream(ssl.getOutputStream()),new JSONObject().put("kind","reference")
+                    .put("key",key).put("video_id",videoId).put("name",title).put("action",action));
+                if(!response(new DataInputStream(ssl.getInputStream())).optBoolean("ok"))throw new IOException("PC chưa nhận bài.");
+                report("sent",title);
+            }
+            return;
+        }
         Uri file=Uri.parse(id);long size=0;MessageDigest sha=MessageDigest.getInstance("SHA-256");byte[] buf=new byte[65536];
         try(InputStream in=activity.getContentResolver().openInputStream(file)){
             if(in==null)throw new IOException("Không đọc được bài đã chọn.");
@@ -133,7 +144,13 @@ final class NearbyClient {
             report("sent",title);
         }
     });}
-    void cancel(){cancelled=true;Socket socket=active;if(socket!=null)try{socket.close();}catch(IOException ignored){}}
+    void cancel(){
+        cancelled=true;
+        Socket transport=active;
+        if(transport==null)return;
+        // Closing the underlying TCP socket unblocks a TLS handshake or read on the transfer worker.
+        new Thread(()->{try{transport.close();}catch(IOException ignored){}}, "Veluna-LAN-cancel").start();
+    }
     void forget(){cancel();stopDiscovery();prefs.edit().clear().apply();try{secrets.write("lan-peer","");}catch(Exception ignored){}report("paired","");}
     void discover(){
         if(nsd==null || discovery!=null || destination().isEmpty())return;

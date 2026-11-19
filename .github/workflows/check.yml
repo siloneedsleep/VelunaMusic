@@ -35,26 +35,11 @@ jobs:
         run: |
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.2.12479018"
           rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
-      - name: Build Rust library for Android
-        env:
-          NDK_VERSION: 27.2.12479018
+      - run: ./android/gradlew -p android --no-daemon :app:assembleDebug
+      - name: Verify merged native libraries and UI assets
         run: |
-          toolchain="$ANDROID_HOME/ndk/$NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$toolchain/aarch64-linux-android26-clang"
-          export CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER="$toolchain/armv7a-linux-androideabi26-clang"
-          export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$toolchain/x86_64-linux-android26-clang"
-          for pair in aarch64-linux-android:arm64-v8a armv7-linux-androideabi:armeabi-v7a x86_64-linux-android:x86_64; do
-            target="${pair%:*}"
-            abi="${pair#*:}"
-            cargo build --target "$target" --release --locked -p veluna-core
-            install -Dm755 "target/$target/release/libveluna_core.so" "android/app/src/main/jniLibs/$abi/libveluna_core.so"
-          done
-      - run: gradle -p android --no-daemon :app:assembleDebug
-      - name: Verify packaged native libraries and player
-        run: |
-          apk=android/app/build/outputs/apk/debug/app-debug.apk
-          for abi in arm64-v8a armeabi-v7a x86_64; do unzip -t "$apk" "lib/$abi/libveluna_core.so"; done
-          for item in index.html library.js lrc.js simpmusic/poppins-regular.ttf simpmusic/GPL-3.0.txt; do unzip -t "$apk" "assets/$item"; done
+          for abi in arm64-v8a armeabi-v7a x86_64; do test -s "android/app/build/intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib/$abi/libveluna_core.so"; done
+          for item in index.html library.js lrc.js remote-mailbox.js; do test -s "android/app/build/intermediates/assets/debug/mergeDebugAssets/$item"; done
       - name: Allow emulator access to KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -67,4 +52,4 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          script: gradle -p android --no-daemon :app:connectedDebugAndroidTest
+          script: ./android/gradlew -p android --no-daemon :app:connectedDebugAndroidTest
