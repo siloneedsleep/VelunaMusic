@@ -79,7 +79,11 @@
       comm_github_desc: "Xem mã nguồn Rust/Java/Web, báo lỗi, kiểm tra checksum phát hành và theo dõi nhánh codex/dev.",
       comm_discuss_desc: "Trao đổi preset Liquid Glass, phản hồi kết quả kiểm thử thiết bị Android/Windows và đề xuất tính năng.",
       footer_author: "Phát triển bởi @siloneedsleep · Giấy phép GPL-3.0",
-      footer_legal: "VelunaMusic không liên kết với YouTube, Google hay Spotify. Các luồng stream tuân theo giới hạn kỹ thuật và quyền truy cập thực tế của từng tài khoản."
+      footer_privacy: "Chính sách bảo mật",
+      footer_terms: "Điều khoản sử dụng",
+      footer_legal: "VelunaMusic không liên kết với YouTube, Google hay Spotify. Các luồng stream tuân theo giới hạn kỹ thuật và quyền truy cập thực tế của từng tài khoản.",
+      privacy_page_title: "VelunaMusic · Chính sách bảo mật",
+      terms_page_title: "VelunaMusic · Điều khoản sử dụng"
     },
     en: {
       page_title: "VelunaMusic · Cross-Platform Music Player",
@@ -151,11 +155,15 @@
       comm_github_desc: "Inspect Rust/Java/Web sources, file issues, verify release checksums, and track the codex/dev branch.",
       comm_discuss_desc: "Share Liquid Glass presets, device battery measurements, and feature requests with maintainers.",
       footer_author: "Built by @siloneedsleep · Licensed under GPL-3.0",
-      footer_legal: "VelunaMusic is not affiliated with YouTube, Google, or Spotify. Audio streams remain bound by each source's technical limits and account entitlements."
+      footer_privacy: "Privacy Policy",
+      footer_terms: "Terms of Service",
+      footer_legal: "VelunaMusic is not affiliated with YouTube, Google, or Spotify. Audio streams remain bound by each source's technical limits and account entitlements.",
+      privacy_page_title: "VelunaMusic · Privacy Policy",
+      terms_page_title: "VelunaMusic · Terms of Service"
     }
   };
 
-  let currentLang = "vi";
+  let currentLang = (typeof document !== "undefined" && document.documentElement?.dataset?.defaultLang === "en") ? "en" : "vi";
   try {
     const savedLang = localStorage.getItem("veluna-site-lang");
     if (savedLang === "en" || savedLang === "vi") currentLang = savedLang;
@@ -223,7 +231,8 @@
     const dict = I18N[currentLang];
     if (typeof document !== "undefined" && document.documentElement) {
       document.documentElement.lang = currentLang;
-      document.title = dict.page_title;
+      const titleKey = document.body?.dataset?.pageTitleKey || "page_title";
+      document.title = dict[titleKey] || dict.page_title;
     }
     for (const node of queryAll("[data-i18n]")) {
       const k = node.dataset?.i18n;

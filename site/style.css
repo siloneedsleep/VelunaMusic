@@ -1113,10 +1113,134 @@ main,
   color: var(--cobalt-sky);
 }
 
+.footer-links a:hover {
+  color: var(--chrome-light);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
 .footer-legal {
   margin: 0;
   font-size: 0.78rem;
   color: var(--chrome-muted);
+}
+
+.footer-signpath {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-soft);
+}
+
+.footer-signpath a {
+  color: var(--cobalt-sky);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.footer-signpath a:hover {
+  color: var(--chrome-light);
+}
+
+html[lang="vi"] [data-lang-block="en"],
+html[lang="en"] [data-lang-block="vi"] {
+  display: none;
+}
+
+.legal-main {
+  width: min(920px, 92vw);
+  margin: 0 auto;
+  padding: 40px 0 64px;
+  display: grid;
+  gap: 24px;
+}
+
+.legal-hero {
+  display: grid;
+  gap: 12px;
+  padding: 12px 0 4px;
+}
+
+.legal-hero h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4.4vw, 3rem);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+}
+
+.legal-lead {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--text-soft);
+  font-size: 1.02rem;
+}
+
+.legal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.legal-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.legal-card {
+  padding: 26px 28px;
+  display: grid;
+  gap: 12px;
+}
+
+.legal-card h2 {
+  margin: 0;
+  font-size: 1.24rem;
+  color: var(--chrome-light);
+  letter-spacing: -0.01em;
+}
+
+.legal-card p {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.96rem;
+}
+
+.legal-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 0.95rem;
+}
+
+.legal-list strong {
+  color: var(--text-main);
+}
+
+.legal-card code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 0.86em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: var(--cobalt-sky);
+}
+
+.legal-link {
+  color: var(--cobalt-sky);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.legal-link:hover {
+  color: var(--chrome-light);
+}
+
+.legal-footer {
+  width: min(920px, 92vw);
+  margin: 0 auto;
 }
 
 [data-reveal] {

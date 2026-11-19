@@ -1,4 +1,5 @@
 {
+  "cleanUrls": true,
   "headers": [
     {
       "source": "/(.*)",
@@ -52,6 +53,14 @@
     {
       "destination": "/watch.html",
       "source": "/watch"
+    },
+    {
+      "destination": "/privacy.html",
+      "source": "/privacy"
+    },
+    {
+      "destination": "/terms.html",
+      "source": "/terms"
     }
   ]
 }

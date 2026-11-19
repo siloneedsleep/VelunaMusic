@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en" data-default-lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#040812">
+  <meta name="description" content="VelunaMusic Privacy Policy — local-first credential storage, zero telemetry, minimal Supabase sync metadata, and data deletion guidance.">
+  <title>VelunaMusic · Privacy Policy</title>
+  <link rel="canonical" href="https://veluna.siloneedsleep.xyz/privacy">
+  <link rel="icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body data-page-title-key="privacy_page_title">
+  <div class="ambient-bg" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+    <div class="ambient-grid"></div>
+  </div>
+
+  <header class="site-header">
+    <div class="nav-shell glass-surface">
+      <a class="brand" href="/">
+        <img src="/icon-512.png" width="34" height="34" alt="VelunaMusic">
+        <span>VelunaMusic</span>
+      </a>
+      <button id="nav-toggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="primary-nav" data-i18n-aria="nav_toggle_aria" aria-label="Toggle navigation menu">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <nav id="primary-nav" class="site-nav" aria-label="Primary navigation">
+        <a href="/" data-i18n="nav_home">Home</a>
+        <a href="/#features" data-i18n="nav_features">Features</a>
+        <a href="/#showcase" data-i18n="nav_showcase">Showcase</a>
+        <a href="/#downloads" data-i18n="nav_downloads">Downloads</a>
+        <a href="/#faq" data-i18n="nav_faq">FAQ</a>
+        <div class="nav-utils">
+          <button id="lang-toggle" class="lang-btn" type="button" aria-pressed="true" title="Switch Vietnamese / English">VI</button>
+          <a class="icon-link" href="https://github.com/siloneedsleep/VelunaMusic" target="_blank" rel="noopener" aria-label="GitHub">
+            <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor" aria-hidden="true"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2Z"/></svg>
+          </a>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top" class="legal-main">
+    <div data-lang-block="en">
+      <section class="legal-hero">
+        <p class="eyebrow">
+          <span class="chrome-dot" aria-hidden="true"></span>
+          <span>PRIVACY &amp; DATA ARCHITECTURE</span>
+        </p>
+        <h1><span class="chrome-text">Privacy Policy</span></h1>
+        <p class="legal-lead">
+          VelunaMusic is built around local-first playback, strict credential isolation, and zero behavioral tracking across Android, Windows, and this website.
+        </p>
+        <div class="legal-meta">
+          <span class="meta-chip glass-pill">Effective: November 2026</span>
+          <span class="meta-chip glass-pill">Zero Telemetry</span>
+          <span class="meta-chip glass-pill">GPL-3.0 Open Source</span>
+        </div>
+      </section>
+
+      <div class="legal-stack">
+        <article class="legal-card glass-surface">
+          <h2>1. Local-First &amp; Zero Telemetry</h2>
+          <p>
+            VelunaMusic does not collect analytics, behavioral telemetry, crash-tracking profiles, or advertising identifiers. Local audio playback, libraries, lyrics offsets, and interface themes operate fully offline without signing in.
+          </p>
+          <ul class="legal-list">
+            <li><strong>On-device credential storage:</strong> Third-party service credentials (such as YouTube Music cookies or session tokens and personal AI DJ API keys) are stored strictly on each device using <strong>Windows Credential Manager</strong> on desktop and <strong>Android Keystore</strong> on mobile. They are never uploaded to VelunaMusic servers.</li>
+            <li><strong>Safe backups:</strong> Standard library, playlist, and theme exports exclude API keys and service sign-in tokens.</li>
+            <li><strong>Direct LAN transfers:</strong> Paired phone-to-PC transfers run directly over your local Wi-Fi/LAN using TLS certificate pinning and SHA-256 integrity checks without routing audio files through cloud servers.</li>
+          </ul>
+        </article>
+
+        <article class="legal-card glass-surface">
+          <h2>2. Cloud Sync &amp; Handoff (Supabase)</h2>
+          <p>
+            Signing in to a VelunaMusic account is optional and used only for cross-device sync, playback handoff, and remote control. When enabled, our Supabase backend stores only the minimum operational data required:
+          </p>
+          <ul class="legal-list">
+            <li><strong>Account &amp; linked devices:</strong> Minimal account identifier and registered device labels/IDs isolated per account via Row Level Security policies.</li>
+            <li><strong>Library &amp; playlist metadata:</strong> Track references, playlists, and content digests (<code>SHA-256</code> hashes of local files for cross-device matching). Raw local audio files are never uploaded.</li>
+            <li><strong>Short-lived remote &amp; handoff signals:</strong> Playback handoff state and remote control command queues that expire automatically after delivery or timeout.</li>
+          </ul>
+        </article>
+
+        <article class="legal-card glass-surface">
+          <h2>3. Third-Party Services</h2>
+          <p>
+            VelunaMusic connects to external services only when you initiate a feature that relies on them:
+          </p>
+          <ul class="legal-list">
+            <li><strong>Spotify (optional):</strong> Connecting a Spotify account uses OAuth 2.0 PKCE through the <code>spotify-link</code> Supabase Edge Function and the <code>/callback</code> endpoint (served with <code>Cache-Control: no-store</code> and <code>Referrer-Policy: no-referrer</code>).</li>
+            <li><strong>YouTube Music &amp; lyrics lookups:</strong> Search, playback resolution, and synced lyrics requests are sent directly from your device to YouTube Music (InnerTube) and public lyrics endpoints under your own network connection.</li>
+            <li><strong>GitHub Releases API:</strong> This website and the in-app updater query <code>api.github.com/repos/siloneedsleep/VelunaMusic/releases/latest</code> solely to locate official release assets and verify SHA-256 checksums.</li>
+          </ul>
+        </article>
+
+        <article class="legal-card glass-surface">
+          <h2>4. Website Data &amp; Content Security</h2>
+          <p>
+            <code>veluna.siloneedsleep.xyz</code> uses no third-party tracking scripts, cookies, or ad networks. Only your selected interface language (<code>veluna-site-lang</code>) is saved locally in browser storage. Strict Content Security Policy headers restrict scripts, styles, and images to this origin and network requests exclusively to the GitHub Releases API.
+          </p>
+        </article>
+
+        <article class="legal-card glass-surface">
+          <h2>5. Contact &amp; Data Deletion</h2>
+          <p>
+            You retain full control over your local and synced data at all times:
+          </p>
+          <ul class="legal-list">
+            <li><strong>Unlink devices &amp; local data:</strong> Sign out or remove linked devices inside VelunaMusic settings, revoke connected Spotify access from your Spotify account dashboard, or clear local app data to remove device-stored credentials immediately.</li>
+            <li><strong>Account &amp; cloud data deletion:</strong> To request permanent deletion of your VelunaMusic Supabase account and associated synced metadata, email <a class="legal-link" href="mailto:truongthinhdo61@gmail.com">truongthinhdo61@gmail.com</a> from your account email address. Verified deletion requests are completed promptly.</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+
+    <div data-lang-block="vi">
+      <section class="legal-hero">
+        <p class="eyebrow">
+          <span class="chrome-dot" aria-hidden="true"></span>
+          <span>QUYỀN RIÊNG TƯ &amp; KIẾN TRÚC BẢO MẬT</span>
+        </p>
+        <h1><span class="chrome-text">Chính sách bảo mật</span></h1>
+        <p class="legal-lead">
+          VelunaMusic được thiết kế theo nguyên tắc ưu tiên cục bộ (local-first), tách biệt nghiêm ngặt thông tin xác thực và không theo dõi hành vi người dùng trên Android, Windows cũng như trang web này.
+        </p>
+        <div class="legal-meta">
+          <span class="meta-chip glass-pill">Hiệu lực: Tháng 11/2026</span>
+          <span class="meta-chip glass-pill">Không Telemetry</span>
+          <span class="meta-chip glass-pill">Mã nguồn mở GPL-3.0</span>
+        </div>
+      </section>
+
+      <div class="legal-stack">
+        <article class="legal-card glass-surface">
+          <h2>1. Ưu tiên cục bộ &amp; Không thu thập Telemetry</h2>
+          <p>
+            VelunaMusic không thu thập dữ liệu theo dõi hành vi, phân tích sử dụng hay mã định danh quảng cáo. Phát nhạc nội bộ, thư viện, bù trễ lời bài hát và giao diện Liquid Glass hoạt động hoàn toàn ngoại tuyến mà không cần đăng nhập.
+          </p>
+          <ul class="legal-list">
+            <li><strong>Lưu thông tin xác thực tại thiết bị:</strong> Thông tin đăng nhập dịch vụ bên thứ ba (cookie/token YouTube Music, khóa API AI DJ cá nhân) được lưu cục bộ trong <strong>Windows Credential Manager</strong> trên máy tính và <strong>Android Keystore</strong> trên điện thoại, tuyệt đối không tải lên máy chủ.</li>
+            <li><strong>Sao lưu an toàn:</strong> Các bản xuất thư viện, playlist và giao diện thông thường tự động loại trừ khóa API và token đăng nhập.</li>
+            <li><strong>Truyền tệp LAN trực tiếp:</strong> Kéo-thả bài hát giữa điện thoại và PC chạy trực tiếp trong mạng Wi-Fi/LAN bằng TLS certificate pinning và kiểm tra toàn vẹn SHA-256, không đi qua máy chủ đám mây.</li>
+          </ul>
+        </article>
+
+        <article class="legal-card glass-surface">
+          <h2>2. Đồng bộ đám mây &amp; Chuyển phiên phát (Supabase)</h2>
+          <p>
+            Đăng nhập tài khoản VelunaMusic là tùy chọn và chỉ phục vụ đồng bộ đa thiết bị, chuyển phiên phát (handoff) và điều khiển từ xa. Khi bật, hệ thống Supabase chỉ lưu lượng dữ liệu tối thiểu cần thiết:
+          </p>
+          <ul class="legal-list">
+            <li><strong>Tài khoản &amp; thiết bị liên kết:</strong> Định danh tài khoản tối thiểu và danh sách thiết bị đã liên kết, được cô lập nghiêm ngặt theo từng tài khoản bằng Row Level Security.</li>
+            <li><strong>Metadata thư viện &amp; playlist:</strong> Tham chiếu bài hát, playlist và mã băm nội dung (<code>SHA-256</code> của tệp nhạc nội bộ để khớp bài giữa các máy). Tệp âm thanh gốc không bao giờ được tải lên cloud.</li>
+            <li><strong>Hàng chờ lệnh điều khiển ngắn hạn:</strong> Trạng thái chuyển phiên phát và lệnh điều khiển từ xa tự động hết hạn sau khi xử lý hoặc quá thời gian hiệu lực.</li>
+          </ul>
+        </article>
+
+        <article class="legal-card glass-surface">
+          <h2>3. Dịch vụ bên thứ ba</h2>
+          <p>
+            VelunaMusic chỉ kết nối tới dịch vụ bên ngoài khi người dùng chủ động kích hoạt tính năng tương ứng:
+          </p>
+          <ul class="legal-list">
+            <li><strong>Spotify (tùy chọn):</strong> Khi bạn chủ động liên kết Spotify, quá trình xác thực sử dụng OAuth 2.0 PKCE thông qua Edge Function <code>spotify-link</code> và trang callback <code>/callback</code> (áp dụng <code>Cache-Control: no-store</code> và <code>Referrer-Policy: no-referrer</code>).</li>
+            <li><strong>YouTube Music &amp; lời bài hát:</strong> Yêu cầu tìm kiếm, phân giải luồng phát và tra cứu lời bài hát đồng bộ được gửi trực tiếp từ thiết bị của bạn tới YouTube Music (InnerTube) và nguồn lời bài hát công khai.</li>
+            <li><strong>GitHub Releases API:</strong> Trang web này và trình kiểm tra cập nhật gọi <code>api.github.com/repos/siloneedsleep/VelunaMusic/releases/latest</code> chỉ để lấy đường dẫn bản phát hành chính thức và đối chiếu mã băm SHA-256.</li>
+          </ul>
+        </article>
+
+        <article class="legal-card glass-surface">
+          <h2>4. Dữ liệu trang web &amp; Bảo mật CSP</h2>
+          <p>
+            <code>veluna.siloneedsleep.xyz</code> không sử dụng script theo dõi, cookie quảng cáo hay bên thứ ba. Trình duyệt chỉ lưu cục bộ tùy chọn ngôn ngữ hiển thị (<code>veluna-site-lang</code>). Chính sách Content Security Policy giới hạn nghiêm ngặt script, style và ảnh về cùng nguồn gốc và chỉ cho phép kết nối tới GitHub API.
+          </p>
+        </article>
+
+        <article class="legal-card glass-surface">
+          <h2>5. Liên hệ &amp; Xóa dữ liệu</h2>
+          <p>
+            Bạn toàn quyền kiểm soát dữ liệu cục bộ và dữ liệu đồng bộ bất cứ lúc nào:
+          </p>
+          <ul class="legal-list">
+            <li><strong>Hủy liên kết thiết bị &amp; xóa dữ liệu cục bộ:</strong> Đăng xuất hoặc gỡ thiết bị trong phần cài đặt VelunaMusic, thu hồi quyền ứng dụng tại trang quản lý tài khoản Spotify, hoặc xóa dữ liệu ứng dụng để hủy ngay toàn bộ token lưu trên máy.</li>
+            <li><strong>Xóa tài khoản &amp; dữ liệu trên cloud:</strong> Để yêu cầu xóa vĩnh viễn tài khoản VelunaMusic trên Supabase cùng toàn bộ metadata đã đồng bộ, vui lòng gửi email tới <a class="legal-link" href="mailto:truongthinhdo61@gmail.com">truongthinhdo61@gmail.com</a> từ địa chỉ email đăng ký tài khoản.</li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer legal-footer">
+    <div class="footer-top">
+      <div class="footer-brand">
+        <strong>VelunaMusic</strong>
+        <span data-i18n="footer_author">Built by @siloneedsleep · Licensed under GPL-3.0</span>
+      </div>
+      <div class="footer-links">
+        <a href="/privacy" data-i18n="footer_privacy">Privacy Policy</a>
+        <a href="/terms" data-i18n="footer_terms">Terms of Service</a>
+        <a href="https://github.com/siloneedsleep/VelunaMusic" target="_blank" rel="noopener">GitHub ↗</a>
+        <a href="https://github.com/siloneedsleep/VelunaMusic/releases" target="_blank" rel="noopener">Releases ↗</a>
+        <a href="https://github.com/siloneedsleep/VelunaMusic/blob/main/THIRD_PARTY.md" target="_blank" rel="noopener">THIRD_PARTY.md ↗</a>
+        <a href="https://siloneedsleep.xyz" target="_blank" rel="noopener">@siloneedsleep ↗</a>
+      </div>
+    </div>
+    <p class="footer-signpath">
+      Free code signing provided by <a href="https://signpath.io" target="_blank" rel="noopener">SignPath.io</a>, certificate by <a href="https://signpath.org" target="_blank" rel="noopener">SignPath Foundation</a>.
+    </p>
+    <p class="footer-legal" data-i18n="footer_legal">
+      VelunaMusic is not affiliated with YouTube, Google, or Spotify. Audio streams remain bound by each source's technical limits and account entitlements.
+    </p>
+  </footer>
+</body>
+</html>

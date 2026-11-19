@@ -142,6 +142,39 @@ test("site CNAME, HTML structure, CSP compliance, and CSS tokens", () => {
   assert.match(css, /interpolate-size:\s*allow-keywords/);
   assert.match(css, /::details-content/);
   assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)/);
+
+  const vercel = JSON.parse(readUtf8("site/vercel.json"));
+  assert.equal(vercel.cleanUrls, true);
+  assert.ok(vercel.rewrites.some((r) => r.source === "/privacy" && r.destination === "/privacy.html"));
+  assert.ok(vercel.rewrites.some((r) => r.source === "/terms" && r.destination === "/terms.html"));
+  assert.ok(vercel.headers.some((h) => h.source === "/(.*)" && h.headers.some((x) => x.key === "Content-Security-Policy")));
+
+  for (const page of ["site/index.html", "site/privacy.html", "site/terms.html"]) {
+    const docHtml = readUtf8(page);
+    assert.equal(/\sstyle="/i.test(docHtml), false, `${page} must not have inline style attributes`);
+    assert.match(docHtml, /href="\/privacy"/);
+    assert.match(docHtml, /href="\/terms"/);
+    assert.match(docHtml, /SignPath\.io/);
+    assert.match(docHtml, /SignPath Foundation/);
+    const scripts = [...docHtml.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)];
+    assert.ok(scripts.length >= 1, `${page} should load external script`);
+    for (const [, attrs, body] of scripts) {
+      assert.match(attrs, /\bsrc="/i);
+      assert.equal(body.trim(), "");
+    }
+  }
+
+  const privacyHtml = readUtf8("site/privacy.html");
+  assert.match(privacyHtml, /Windows Credential Manager/);
+  assert.match(privacyHtml, /Android Keystore/);
+  assert.match(privacyHtml, /SHA-256/);
+  assert.match(privacyHtml, /spotify-link/);
+  assert.match(privacyHtml, /truongthinhdo61@gmail\.com/);
+
+  const termsHtml = readUtf8("site/terms.html");
+  assert.match(termsHtml, /GNU General Public License v3\.0/);
+  assert.match(termsHtml, /github\.com\/siloneedsleep\/VelunaMusic/);
+  assert.match(termsHtml, /Google, YouTube/);
 });
 
 test("site/app.js handles i18n, OS detection, glass presets, and word-timed lyrics without reload", () => {
